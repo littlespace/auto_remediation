@@ -1,0 +1,41 @@
+config:
+  ## amqp details
+  amqp_qname: auto_remediations
+  amqp_addr: http://amqp:5672
+  amqp_user: guest
+  amqp_pass: guest
+  ## alert manager
+  alert_manager_addr: https://alert-manager:8181
+  alert_check_interval: 5m
+  alert_up_check_count: 2
+  am_username: user
+  am_password: pass
+  ## remediations
+  scripts_path: path/to/script
+  timeout: 15m
+  ## db
+  db_addr: db.foo.bar:5672
+  db_username: foo
+  db_password: baz
+  db_name: auto_remediation
+  db_timeout: 5s
+
+rules:
+  - alert_name: BB Link Errors
+    enabled: true
+    clear_check_timeout: 4h
+    audits:
+      - name: Link Checker
+        command: runner.py
+        args: [ --script_name, link_checker ]
+    remediations:
+      - name: Drain Link
+        command: runner.py
+        args: [ --script_name, drain_link ]
+      - name: Jira Issue Create
+        command: runner.py
+        args: [ --script_name, jira_task, --jira_addr, http://jira:8080, --jira_project, Project5, --issue_type, task]
+    on_clear:
+      - name: Jira Issue Clear
+        command: runner.py
+        args: [ --script_name, jira_task, --clear_issue ]
