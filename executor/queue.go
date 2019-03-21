@@ -14,24 +14,13 @@ const (
 	routingKey   = "alerts"
 )
 
-type IncidentInfo struct {
-	Description string    `json:"description"`
-	Entity      string    `json:"entity"`
-	Device      string    `json:"device"`
-	Site        string    `json:"site"`
-	Owner       string    `json:"owner"`
-	Team        string    `json:"team"`
-	Tags        []string  `json:"tags"`
-	StartTime   time.Time `json:"start_time"`
-	Severity    string    `json:"severity"`
-	Status      string    `json:"status"`
-}
-
 type Incident struct {
-	Name    string         `json:"name"`
-	Id      int64          `json:"id"`
-	Infos   []IncidentInfo `json:"infos"`
-	AddedAt time.Time      `json:"added_at"`
+	Name      string                 `json:"name"`
+	Type      string                 `json:"type"`
+	Id        int64                  `json:"id"`
+	StartTime time.Time              `json:"start_time"`
+	Data      map[string]interface{} `json:"data"`
+	AddedAt   time.Time              `json:"added_at"`
 }
 
 type IncidentQueue interface {

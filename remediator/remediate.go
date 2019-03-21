@@ -14,9 +14,10 @@ type Remediator struct {
 	queue    executor.IncidentQueue
 	executor executor.Executioner
 	db       Dbase
+	am       *AlertManager
+	notif    Notifier
 	recv     chan executor.Incident
-	remCache map[string]*Remediation
-
+	exe      map[int64]chan struct{}
 	sync.Mutex
 }
 
@@ -32,15 +33,35 @@ func NewRemediator(configFile string) (*Remediator, error) {
 	}
 	recv := make(chan executor.Incident)
 	q.Register(recv)
-	//db := NewDB(config.DbAddr, config.DbUsername, config.DbPassword, config.DbName, config.DbTimeout)
-	return &Remediator{
+	db := NewDB(config.DbAddr, config.DbUsername, config.DbPassword, config.DbName, config.DbTimeout)
+	am := NewAlertManager(config.AlertManagerAddr, config.AmUsername, config.AmPassword, config.AmOwner, config.AmTeam)
+	r := &Remediator{
 		config:   c,
 		queue:    q,
 		executor: executor.NewExecutor(config.ScriptsPath),
-		db:       nil,
+		db:       db,
+		am:       am,
 		recv:     recv,
-		remCache: make(map[string]*Remediation),
-	}, nil
+		exe:      make(map[int64]chan struct{}),
+	}
+	if config.SlackUrl != "" {
+		r.notif = &SlackNotifier{Url: config.SlackUrl, Channel: config.SlackChannel, Mention: config.SlackMention}
+	}
+	return r, nil
+}
+
+func getCmds(incident executor.Incident, inCmds []executor.Command) []executor.Command {
+	var cmds []executor.Command
+	for _, cmd := range inCmds {
+		cmds = append(cmds, executor.Command{
+			Name:    cmd.Name,
+			Command: cmd.Command,
+			Args:    cmd.Args,
+			Timeout: cmd.Timeout,
+			Input:   incident,
+		})
+	}
+	return cmds
 }
 
 func (r *Remediator) Start(ctx context.Context) {
@@ -53,106 +74,148 @@ func (r *Remediator) Start(ctx context.Context) {
 				glog.V(2).Infof("Not processing timed out incident: %d:%s", newIncident.Id, newIncident.Name)
 				continue
 			}
-			go r.processIncident(ctx, newIncident)
+			go r.processIncident(newIncident)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func checkExecResults(rem *Remediation, itype string, results map[string]*executor.CmdResult) bool {
-	for name, result := range results {
-		glog.V(4).Infof("%s Logs:\n %v", name, result.Stderr)
-		glog.V(4).Infof("%s output:\n %v", name, result.Stdout)
-		// TODO : Save the result to DB
-		if result.RetCode != 0 || result.Error != nil {
-			glog.V(2).Infof("Cmd %s failed with retcode %d and error %v", name, result.RetCode, result.Error)
-			glog.V(2).Infof("%s failed for incident %s", itype, rem.AlertName)
+func (r *Remediator) Close() {
+	r.Lock()
+	defer r.Unlock()
+	glog.Infof("Waiting for %d pending commands to finish executing", len(r.exe))
+	for id, e := range r.exe {
+		<-e
+		glog.V(2).Infof("Done executing remediation %d", id)
+	}
+	r.db.Close()
+}
+
+func (r *Remediator) Notify(rem *Remediation, msg string) {
+	if r.notif != nil {
+		r.notif.Send(rem, msg)
+	}
+}
+
+func (r *Remediator) execute(rem *Remediation, itype string, cmds []executor.Command) bool {
+	glog.V(4).Infof("Running %s for remediation %d, incident %d", itype, rem.Id, rem.IncidentId)
+	e := make(chan struct{})
+	defer func() {
+		close(e)
+		r.Lock()
+		delete(r.exe, rem.Id)
+		r.Unlock()
+	}()
+	r.Lock()
+	r.exe[rem.Id] = e
+	r.Unlock()
+	results := r.executor.Execute(context.Background(), cmds, len(cmds))
+	for cmd, result := range results {
+		glog.V(4).Infof("%s Logs:\n %v", cmd.Name, result.Stderr)
+		glog.V(4).Infof("%s output:\n %v", cmd.Name, result.Stdout)
+		c := &Command{
+			RemediationId: rem.Id,
+			Command:       cmd.Command,
+			Retcode:       result.RetCode,
+			Logs:          result.Stderr,
+			Results:       result.Stdout,
+		}
+		if _, err := r.db.NewRecord(c); err != nil {
+			glog.Errorf("Failed to save cmd to db: %v", err)
+		}
+		if result.RetCode != 0 {
+			glog.V(2).Infof("Cmd %s failed with retcode %d and error %v", cmd.Name, result.RetCode, result.Error)
+			glog.V(2).Infof("%s failed for incident %s", itype, rem.IncidentName)
 			statusStr := fmt.Sprintf("%s_failed", itype)
-			rem.End(statusMap[statusStr])
+			rem.End(statusMap[statusStr], r.db)
+			return false
+		}
+		if result.Error != nil {
+			glog.V(2).Infof("Failed to run cmd %s: %v", cmd.Name, result.Error)
+			rem.End(Status_ERROR, r.db)
 			return false
 		}
 	}
 	return true
 }
 
-func getCmds(incident executor.Incident, inCmds []executor.Command) []executor.Command {
-	var cmds []executor.Command
-	for _, cmd := range inCmds {
-		cmds = append(cmds, executor.Command{
-			Name:    cmd.Name,
-			Command: cmd.Command,
-			Args:    cmd.Args,
-			Timeout: cmd.Timeout,
-			Input:   incident.Infos,
-		})
-	}
-	return cmds
-}
-
-func (r *Remediator) processIncident(ctx context.Context, incident executor.Incident) {
+func (r *Remediator) processIncident(incident executor.Incident) *Remediation {
 	glog.V(2).Infof("Processing incident: %s:%d", incident.Name, incident.Id)
-	config := r.config.Config
-	isActive := assertStatus("ACTIVE", config.AlertManagerAddr, incident.Id, config.AlertCheckInterval, config.AlertUpCheckCount)
-	if !isActive {
-		glog.V(2).Infof("Alert %d is not ACTIVE, skip remediation run", incident.Id)
-		return
-	}
-	glog.V(2).Infof("Incident %s is active, proceeding with remediation", incident.Name)
-	var entities []string
-	for _, info := range incident.Infos {
-		ent := info.Entity
-		if info.Device != "" {
-			ent = fmt.Sprintf("%s:%s", info.Device, info.Entity)
-		}
-		entities = append(entities, ent)
-	}
-	rem := NewRemediation(incident.Name, entities)
-	// TODO save to DB
-	// run pre-audits
 	rule, ok := r.config.RuleByName(incident.Name)
 	if !ok {
 		glog.Errorf("No rule defined for Incident %s", incident.Name)
-		rem.End(Status_ERROR)
-		return
+		return nil
 	}
 	if !rule.Enabled {
 		glog.Errorf("Rule %s defined but not enabled", rule.AlertName)
-		rem.End(Status_ERROR)
-		return
+		return nil
 	}
+	var rem *Remediation
+	switch incident.Type {
+	case "ACTIVE":
+		rem = r.processActive(incident, rule)
+	case "CLEARED":
+		rem = r.processCleared(incident, rule)
+	}
+	return rem
+}
+
+func (r *Remediator) processActive(incident executor.Incident, rule Rule) *Remediation {
+	config := r.config.Config
+	isActive := r.am.assertStatus("ACTIVE", incident.Id, config.AlertCheckInterval, rule.UpCheckDuration)
+	if !isActive {
+		glog.V(2).Infof("Alert %d is not ACTIVE, skip remediation run", incident.Id)
+		return nil
+	}
+	glog.V(2).Infof("Incident %s is active, proceeding with remediation", incident.Name)
+	rem := NewRemediation(incident)
+	newId, err := r.db.NewRecord(rem)
+	if err != nil {
+		glog.Errorf("Failed to save remediation to db: %v", err)
+	}
+	glog.Infof("Created new remediation %d for incident %d", newId, incident.Id)
+	rem.Id = newId
+	// run pre-audits
 	cmds := getCmds(incident, rule.Audits)
-	results := r.executor.Execute(ctx, cmds, len(cmds))
-	if !checkExecResults(rem, "audit", results) {
-		return
+	if !r.execute(rem, "audit", cmds) {
+		glog.Errorf("Audit run failed, not running remediations")
+		r.Notify(rem, "Audit run failed, not running remediations")
+		return rem
 	}
 	// run remediations
-	postAck(config.AlertManagerAddr, incident.Id, config.AmUsername, config.AmPassword)
+	r.am.postAck(incident.Id)
 	cmds = getCmds(incident, rule.Remediations)
-	results = r.executor.Execute(ctx, cmds, len(cmds))
-	if !checkExecResults(rem, "remediation", results) {
-		return
+	if !r.execute(rem, "remediation", cmds) {
+		glog.Errorf("Remediation run failed")
+		r.Notify(rem, "Remediation run failed")
+		return rem
 	}
-	// monitor until issue clears - potentially long wait
-	rem.Status = Status_MONITORING
-	checkCount := int(rule.ClearCheckTimeout / config.AlertCheckInterval)
-	glog.V(2).Infof("Monitoring incident %d for %v", incident.Id, rule.ClearCheckTimeout)
-	hasCleared := waitOnStatus("CLEARED", config.AlertManagerAddr, incident.Id, config.AlertCheckInterval, checkCount)
-	if !hasCleared {
-		glog.V(2).Infof("Alert %d not clear after %v, skip on-clear run", incident.Id, rule.ClearCheckTimeout)
-		rem.End(Status_COMPLETED)
-		return
-	}
+	rem.End(Status_REMEDIATION_SUCCESS, r.db)
+	r.Notify(rem, "Remediation Successful")
+	return rem
+}
+
+func (r *Remediator) processCleared(incident executor.Incident, rule Rule) *Remediation {
 	// run on-clear
 	glog.V(2).Infof("Incident %d has now cleared", incident.Id)
 	if len(rule.OnClear) == 0 {
-		rem.End(Status_COMPLETED)
-		return
+		glog.V(2).Infof("Nothing to do for incident %d clear", incident.Id)
+		return nil
 	}
-	cmds = getCmds(incident, rule.OnClear)
-	r.executor.Execute(ctx, cmds, len(cmds))
-	if !checkExecResults(rem, "onclear", results) {
-		return
+	cmds := getCmds(incident, rule.OnClear)
+	rem, err := r.db.GetRemediation(QueryRemByIncidentId, incident.Id)
+	if rem == nil || err != nil {
+		glog.V(2).Info("Cant find remediation for incident %d", incident.Id)
+		return nil
 	}
-	rem.End(Status_COMPLETED)
+	if rem.Status != Status_REMEDIATION_SUCCESS {
+		glog.V(2).Infof("Remediation %d for incident %d was not successful, skip onclear run", rem.Id, incident.Id)
+		return rem
+	}
+	if r.execute(rem, "onclear", cmds) {
+		rem.End(Status_ONCLEAR_SUCCESS, r.db)
+		r.Notify(rem, "Incident cleared")
+	}
+	return rem
 }

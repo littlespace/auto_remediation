@@ -7,7 +7,6 @@ config:
   ## alert manager
   alert_manager_addr: https://alert-manager:8181
   alert_check_interval: 5m
-  alert_up_check_count: 2
   am_username: user
   am_password: pass
   ## remediations
@@ -19,11 +18,14 @@ config:
   db_password: baz
   db_name: auto_remediation
   db_timeout: 5s
+  ## notifications
+  slack_url: http://slack.com
+  slack_channel: '#test'
 
 rules:
   - alert_name: BB Link Errors
     enabled: true
-    clear_check_timeout: 4h
+    up_check_duration: 10m
     audits:
       - name: Link Checker
         command: runner.py

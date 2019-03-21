@@ -9,7 +9,9 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 var (
@@ -61,6 +63,24 @@ func main() {
 	if err != nil {
 		glog.Exitf("Failed to start remediator: %v", err)
 	}
-	ctx := context.Background()
-	rem.Start(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	go rem.Start(ctx)
+
+	// wait for sig
+	signalChan := make(chan os.Signal, 1)
+	shutdown := make(chan struct{})
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM)
+	go func() {
+		for {
+			sig := <-signalChan
+			if sig == os.Interrupt || sig == syscall.SIGTERM {
+				glog.Infof("Waiting for in-flight remediations to finish..")
+				rem.Close()
+				cancel()
+				shutdown <- struct{}{}
+				return
+			}
+		}
+	}()
+	<-shutdown
 }

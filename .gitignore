@@ -1,0 +1,4 @@
+*.swp
+bin/
+auto_remediation
+vendor/

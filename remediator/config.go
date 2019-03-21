@@ -16,9 +16,10 @@ type Config struct {
 	AmqpPass           string        `yaml:"amqp_pass"`
 	AlertManagerAddr   string        `yaml:"alert_manager_addr"`
 	AlertCheckInterval time.Duration `yaml:"alert_check_interval"`
-	AlertUpCheckCount  int           `yaml:"alert_up_check_count"`
 	AmUsername         string        `yaml:"am_username"`
 	AmPassword         string        `yaml:"am_password"`
+	AmOwner            string        `yaml:"am_owner"`
+	AmTeam             string        `yaml:"am_team"`
 	ScriptsPath        string        `yaml:"scripts_path"`
 	Timeout            time.Duration
 	DbAddr             string        `yaml:"db_addr"`
@@ -26,15 +27,18 @@ type Config struct {
 	DbUsername         string        `yaml:"db_username"`
 	DbPassword         string        `yaml:"db_password"`
 	DbTimeout          time.Duration `yaml:"db_timeout"`
+	SlackUrl           string        `yaml:"slack_url"`
+	SlackChannel       string        `yaml:"slack_channel"`
+	SlackMention       string        `yaml:"slack_mention"`
 }
 
 type Rule struct {
-	AlertName         string `yaml:"alert_name"`
-	Enabled           bool
-	ClearCheckTimeout time.Duration `yaml:"clear_check_timeout"`
-	Audits            []executor.Command
-	Remediations      []executor.Command
-	OnClear           []executor.Command
+	AlertName       string `yaml:"alert_name"`
+	Enabled         bool
+	UpCheckDuration time.Duration `yaml:"up_check_duration"`
+	Audits          []executor.Command
+	Remediations    []executor.Command
+	OnClear         []executor.Command `yaml:"on_clear"`
 }
 
 type ConfigHandler struct {

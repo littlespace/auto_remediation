@@ -6,18 +6,50 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"net/http"
+	"sync"
 	"time"
 )
 
 const (
-	alertPath = "/api/alerts"
-	owner     = "auto_remediator"
-	team      = "neteng"
+	alertPath    = "/api/alerts"
+	defaultOwner = "auto_remediator"
 )
 
-func getStatus(addr string, id int64) (string, error) {
-	url := addr + fmt.Sprintf("%s/%d", alertPath, id)
-	resp, err := http.Get(url)
+type Clienter interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type Client struct {
+	*http.Client
+}
+
+type AlertManager struct {
+	addr   string
+	owner  string
+	team   string
+	token  string
+	client Clienter
+
+	sync.Mutex
+}
+
+func NewAlertManager(addr, user, pass, owner, team string) *AlertManager {
+	a := &AlertManager{addr: addr, team: team, owner: owner}
+	if a.owner == "" {
+		a.owner = defaultOwner
+	}
+	a.client = &Client{&http.Client{Timeout: 5 * time.Second}}
+	if err := a.getToken(user, pass); err != nil {
+		// TODO add retry logic here
+		glog.Exitf("failed to talk to Alert Manager: %v", err)
+	}
+	return a
+}
+
+func (a *AlertManager) getStatus(id int64) (string, error) {
+	url := a.addr + fmt.Sprintf("%s/%d", alertPath, id)
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("Failed to query alert %d: %v", id, err)
 	}
@@ -29,38 +61,48 @@ func getStatus(addr string, id int64) (string, error) {
 	return data["Status"].(string), nil
 }
 
-func assertStatus(desiredStatus, addr string, id int64, checkInterval time.Duration, checkCount int) bool {
-	for i := 0; i < checkCount; i++ {
-		status, err := getStatus(addr, id)
+func (a *AlertManager) assertStatus(desiredStatus string, id int64, checkInterval, checkTime time.Duration) bool {
+	now := time.Now()
+	for {
+		status, err := a.getStatus(id)
 		if err != nil {
-			glog.Errorf("Failed to check alert %s status: %v", id, err)
+			glog.Errorf("Failed to check alert %d status: %v", id, err)
 			return false
 		}
 		if status != desiredStatus {
 			return false
+		}
+		if time.Now().Sub(now) >= checkTime {
+			break
 		}
 		time.Sleep(checkInterval)
 	}
 	return true
 }
 
-func waitOnStatus(desiredStatus, addr string, id int64, checkInterval time.Duration, checkCount int) bool {
-	for i := 0; i < checkCount; i++ {
-		status, err := getStatus(addr, id)
-		if err != nil {
-			glog.Errorf("Failed to check alert %s status: %v", id, err)
+func (a *AlertManager) waitOnStatus(desiredStatus string, id int64, checkInterval, timeout time.Duration) bool {
+	t := time.NewTimer(timeout)
+	for {
+		select {
+		case <-t.C:
 			return false
+		default:
+			status, err := a.getStatus(id)
+			if err != nil {
+				glog.Errorf("Failed to check alert %s status: %v", id, err)
+				return false
+			}
+			if status == desiredStatus {
+				return true
+			}
+			time.Sleep(checkInterval)
 		}
-		if status == desiredStatus {
-			return true
-		}
-		time.Sleep(checkInterval)
 	}
 	return false
 }
 
-func postAck(addr string, id int64, user, pass string) error {
-	url := addr + "/api/auth"
+func (a *AlertManager) getToken(user, pass string) error {
+	url := a.addr + "/api/auth"
 	data := struct {
 		Username string
 		Password string
@@ -68,13 +110,12 @@ func postAck(addr string, id int64, user, pass string) error {
 	body, _ := json.Marshal(&data)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	tokenData := make(map[string]string)
+	tokenData := make(map[string]interface{})
 	if err := json.NewDecoder(resp.Body).Decode(&tokenData); err != nil {
 		return err
 	}
@@ -82,13 +123,51 @@ func postAck(addr string, id int64, user, pass string) error {
 	if !ok {
 		return fmt.Errorf("Failed to get token")
 	}
+	a.token = token.(string)
+	exp := tokenData["expires_at"].(float64)
+	go a.refreshToken(int64(exp))
+	return nil
+}
 
-	url = addr + fmt.Sprintf("%s/%d/ack?owner=%s&team=%s", alertPath, id, owner, team)
-	req, _ = http.NewRequest("PATCH", url, nil)
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	_, err = client.Do(req)
+func (a *AlertManager) refreshToken(expiresAt int64) {
+	// AM expectes a refresh within 30 seconds of expiry
+	expiresAt = expiresAt - 20
+	refresh := time.Unix(expiresAt, 0).Sub(time.Now())
+	time.Sleep(refresh)
+	a.Lock()
+	defer a.Unlock()
+	url := a.addr + "/api/auth/refresh"
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.token))
+	resp, err := a.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Failed to post alert %d: %v", id, err)
+		glog.Errorf("Failed to refresh token: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	tokenData := make(map[string]interface{})
+	if err := json.NewDecoder(resp.Body).Decode(&tokenData); err != nil {
+		return
+	}
+	token, ok := tokenData["token"]
+	if !ok {
+		glog.Errorf("Failed to get token")
+		return
+	}
+	a.token = token.(string)
+	exp := tokenData["expires_at"].(float64)
+	go a.refreshToken(int64(exp))
+}
+
+func (a *AlertManager) postAck(id int64) error {
+	a.Lock()
+	defer a.Unlock()
+	url := a.addr + fmt.Sprintf("%s/%d/ack?owner=%s&team=%s", alertPath, id, a.owner, a.team)
+	req, _ := http.NewRequest("PATCH", url, nil)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.token))
+	_, err := a.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Failed to patch alert %d: %v", id, err)
 	}
 	return nil
 }

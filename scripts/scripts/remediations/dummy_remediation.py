@@ -10,15 +10,17 @@ class DummyRemediation:
         self.logger = logger
 
     def run(self, inp, args):
-        self.logger.info('Got {} incidents'.format(len(inp)))
+        self.logger.info('Got incident Name: {}, Id: {}'.format(
+            inp['name'], inp['id']))
         t = time.time()
-        ents = []
-        for i in inp:
-            self.logger.info(
-                'Running remediation on device: {}, entity: {}'.format(i['device'], i['entity']))
-            ents.append('{}:{}'.format(i['device'], i['entity']))
+        data = inp['data']
+        ents = data.get('entities', [])
+        if not ents:
+            ents.append('{}:{}'.format(data.get('device'), data.get('entity')))
+        for ent in ents:
+            self.logger.info('Running remediation for {}'.format(ent))
             time.sleep(5)
-            self.logger.info('Done')
+        self.logger.info('Done')
         out = {
             'remediation': 'dummy_remediation',
             'entities': ents,

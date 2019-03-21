@@ -16,7 +16,7 @@ import (
 const defaultTimeout = 30 * time.Second
 
 type Command struct {
-	Input   []IncidentInfo
+	Input   Incident
 	Name    string
 	Command string
 	Args    []string
@@ -31,7 +31,7 @@ type CmdResult struct {
 }
 
 type Executioner interface {
-	Execute(ctx context.Context, cmds []Command, maxParallel int) map[string]*CmdResult
+	Execute(ctx context.Context, cmds []Command, maxParallel int) map[*Command]*CmdResult
 }
 
 type Executor struct {
@@ -42,8 +42,8 @@ func NewExecutor(cmdsPath string) Executioner {
 	return &Executor{cmdsPath: cmdsPath}
 }
 
-func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int) map[string]*CmdResult {
-	ret := make(map[string]*CmdResult)
+func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int) map[*Command]*CmdResult {
+	ret := make(map[*Command]*CmdResult)
 	sem := make(chan struct{}, maxParallel)
 	var wg sync.WaitGroup
 	for _, cmd := range cmds {
@@ -61,24 +61,28 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 			defer cancel()
 			fullPath := filepath.Join(e.cmdsPath, cmd.Command)
 			command := exec.CommandContext(ctx, fullPath, cmd.Args...)
+			// start the command in its own pg
+			command.SysProcAttr = &syscall.SysProcAttr{
+				Setpgid: true,
+			}
 			stdin, err := command.StdinPipe()
 			if err != nil {
-				ret[cmd.Name] = &CmdResult{Error: fmt.Errorf("Failed to open stdin for cmd: %s: %v", fullPath, err)}
+				ret[&cmd] = &CmdResult{Error: fmt.Errorf("Failed to open stdin for cmd: %s: %v", fullPath, err)}
 				return
 			}
 			stdout, err := command.StdoutPipe()
 			if err != nil {
-				ret[cmd.Name] = &CmdResult{Error: fmt.Errorf("Failed to open stdout for cmd: %s: %v", fullPath, err)}
+				ret[&cmd] = &CmdResult{Error: fmt.Errorf("Failed to open stdout for cmd: %s: %v", fullPath, err)}
 				return
 			}
 			stderr, err := command.StderrPipe()
 			if err != nil {
-				ret[cmd.Name] = &CmdResult{Error: fmt.Errorf("Failed to open stderr for cmd: %s: %v", fullPath, err)}
+				ret[&cmd] = &CmdResult{Error: fmt.Errorf("Failed to open stderr for cmd: %s: %v", fullPath, err)}
 				return
 			}
 			data, err := json.Marshal(&cmd.Input)
 			if err != nil {
-				ret[cmd.Name] = &CmdResult{Error: fmt.Errorf("Unable to marshal stdin for cmd: %s: %v", fullPath, err)}
+				ret[&cmd] = &CmdResult{Error: fmt.Errorf("Unable to marshal stdin for cmd: %s: %v", fullPath, err)}
 				return
 			}
 			go func() {
@@ -86,13 +90,13 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 				io.WriteString(stdin, string(data))
 			}()
 			if err := command.Start(); err != nil {
-				ret[cmd.Name] = &CmdResult{Error: fmt.Errorf("Unable to start cmd: %s: %v", fullPath, err)}
+				ret[&cmd] = &CmdResult{Error: fmt.Errorf("Unable to start cmd: %s: %v", fullPath, err)}
 				return
 			}
 			res := &CmdResult{}
 			serr, _ := ioutil.ReadAll(stderr)
-			sout, _ := ioutil.ReadAll(stdout)
 			res.Stderr = string(serr)
+			sout, _ := ioutil.ReadAll(stdout)
 			res.Stdout = string(sout)
 
 			if err := command.Wait(); err != nil {
@@ -104,7 +108,7 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 			} else {
 				res.Error = err
 			}
-			ret[cmd.Name] = res
+			ret[&cmd] = res
 		}(cmd)
 	}
 	wg.Wait()
