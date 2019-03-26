@@ -63,11 +63,13 @@ func (db *MockDb) GetRemediation(query string, args ...interface{}) (*Remediatio
 type MockClient struct{}
 
 func (c *MockClient) Do(req *http.Request) (*http.Response, error) {
+	body := []byte(`[{"status": "ACTIVE"}]`)
 	if strings.HasSuffix(req.URL.String(), "10") {
-		body := []byte(`{"Status": "CLEARED"}`)
-		return &http.Response{StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewBuffer(body))}, nil
+		body = []byte(`[{"status": "CLEARED"}]`)
 	}
-	body := []byte(`{"Status": "ACTIVE"}`)
+	if strings.Contains(req.URL.String(), "agg_id") {
+		body = []byte(`[{"alert": 40}, {"alert": 50}]`)
+	}
 	return &http.Response{StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewBuffer(body))}, nil
 }
 
@@ -151,4 +153,13 @@ func TestIncidentProcessing(t *testing.T) {
 	inc.Name = "Test1"
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
+
+	// test aggregate incident
+	inc.IsAggregate = true
+	inc.Id = 30
+	rem = r.processIncident(inc)
+	assert.Contains(t, inc.Data, "components")
+	components := inc.Data["components"].([]map[string]interface{})
+	assert.Equal(t, len(components), 2)
+	assert.Equal(t, components[0]["alert"].(float64), float64(40))
 }

@@ -16,11 +16,17 @@ class DummyAudit:
         passed = True
         message = 'Audit passed'
         data = inp['data']
-        ents = data.get('entities', [])
-        if not ents:
-            ents.append('{}:{}'.format(data.get('device'), data.get('entity')))
-        for ent in ents:
+        if inp['is_aggregate']:
+            components = data.get('components', [])
+            self.logger.info(
+                'Incident has {} components'.format(len(components)))
+        else:
+            components = [data]
+        ents = []
+        for c in components:
+            ent = '{}:{}'.format(c.get('device'), c['entity'])
             self.logger.info('Running audit for {}'.format(ent))
+            ents.append(ent)
             time.sleep(10)
         r = random.randint(0, 100)
         if r > int(args.pass_percent):

@@ -46,19 +46,32 @@ func NewAlertManager(addr, user, pass, owner, team string) *AlertManager {
 	return a
 }
 
-func (a *AlertManager) getStatus(id int64) (string, error) {
-	url := a.addr + fmt.Sprintf("%s/%d", alertPath, id)
-	req, _ := http.NewRequest("GET", url, nil)
+func (a *AlertManager) getAlerts(url string) ([]map[string]interface{}, error) {
+	u := a.addr + url
+	req, _ := http.NewRequest("GET", u, nil)
 	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var data []interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("Unable to decode json body: %v", err)
+	}
+	var ret []map[string]interface{}
+	for _, d := range data {
+		ret = append(ret, d.(map[string]interface{}))
+	}
+	return ret, nil
+}
+
+func (a *AlertManager) getStatus(id int64) (string, error) {
+	url := fmt.Sprintf("%s?id=%d", alertPath, id)
+	alerts, err := a.getAlerts(url)
 	if err != nil {
 		return "", fmt.Errorf("Failed to query alert %d: %v", id, err)
 	}
-	defer resp.Body.Close()
-	var data map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "", fmt.Errorf("Unable to decode json body: %v", err)
-	}
-	return data["Status"].(string), nil
+	return alerts[0]["status"].(string), nil
 }
 
 func (a *AlertManager) assertStatus(desiredStatus string, id int64, checkInterval, checkTime time.Duration) bool {

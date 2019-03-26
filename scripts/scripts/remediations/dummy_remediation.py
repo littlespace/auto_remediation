@@ -14,11 +14,17 @@ class DummyRemediation:
             inp['name'], inp['id']))
         t = time.time()
         data = inp['data']
-        ents = data.get('entities', [])
-        if not ents:
-            ents.append('{}:{}'.format(data.get('device'), data.get('entity')))
-        for ent in ents:
+        if inp['is_aggregate']:
+            components = data.get('components', [])
+            self.logger.info(
+                'Incident has {} components'.format(len(components)))
+        else:
+            components = [data]
+        ents = []
+        for c in components:
+            ent = '{}:{}'.format(c.get('device'), c['entity'])
             self.logger.info('Running remediation for {}'.format(ent))
+            ents.append(ent)
             time.sleep(5)
         self.logger.info('Done')
         out = {

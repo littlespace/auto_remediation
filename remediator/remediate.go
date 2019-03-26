@@ -151,6 +151,15 @@ func (r *Remediator) processIncident(incident executor.Incident) *Remediation {
 		glog.Errorf("Rule %s defined but not enabled", rule.AlertName)
 		return nil
 	}
+	if incident.IsAggregate {
+		url := fmt.Sprintf("%s?agg_id=%d", alertPath, incident.Id)
+		components, err := r.am.getAlerts(url)
+		if err != nil {
+			glog.Errorf("Failed to query components for incident %d", incident.Id)
+			return nil
+		}
+		incident.Data["components"] = components
+	}
 	var rem *Remediation
 	switch incident.Type {
 	case "ACTIVE":

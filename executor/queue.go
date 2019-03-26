@@ -15,12 +15,13 @@ const (
 )
 
 type Incident struct {
-	Name      string                 `json:"name"`
-	Type      string                 `json:"type"`
-	Id        int64                  `json:"id"`
-	StartTime time.Time              `json:"start_time"`
-	Data      map[string]interface{} `json:"data"`
-	AddedAt   time.Time              `json:"added_at"`
+	Name        string                 `json:"name"`
+	Type        string                 `json:"type"`
+	Id          int64                  `json:"id"`
+	StartTime   time.Time              `json:"start_time"`
+	Data        map[string]interface{} `json:"data"`
+	AddedAt     time.Time              `json:"added_at"`
+	IsAggregate bool                   `json:"is_aggregate"`
 }
 
 type IncidentQueue interface {
