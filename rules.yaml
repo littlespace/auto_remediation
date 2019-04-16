@@ -21,11 +21,19 @@ config:
   ## notifications
   slack_url: http://slack.com
   slack_channel: '#test'
+  # escalation
+  # escalation
+  jira_url: https://jira.com
+  jira_username: foo
+  jira_password: bar
+  jira_project: foobar
+
 
 rules:
   - alert_name: BB Link Errors
     enabled: true
     up_check_duration: 10m
+    jira_project: barfoo
     audits:
       - name: Link Checker
         command: runner.py
@@ -34,9 +42,6 @@ rules:
       - name: Drain Link
         command: runner.py
         args: [ --script_name, drain_link ]
-      - name: Jira Issue Create
-        command: runner.py
-        args: [ --script_name, jira_task, --jira_addr, http://jira:8080, --jira_project, Project5, --issue_type, task]
     on_clear:
       - name: Jira Issue Clear
         command: runner.py

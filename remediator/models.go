@@ -9,6 +9,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/mayuresh82/auto_remediation/executor"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -20,7 +21,9 @@ var schema = `
 	incident_id INT NOT NULL,
 	entities VARCHAR(128)[] DEFAULT array[]::varchar[],
 	start_time BIGINT NOT NULL,
-	end_time BIGINT);
+	end_time BIGINT,
+	task_id VARCHAR(32),
+	attempts INT);
 
   CREATE TABLE IF NOT EXISTS commands (
 	id SERIAL PRIMARY KEY,
@@ -34,15 +37,16 @@ var schema = `
 var (
 	QueryInsertNewRemediation = `INSERT INTO
     remediations (
-      incident_name, incident_id, status, entities, start_time, end_time
+      incident_name, incident_id, status, entities, start_time, end_time, task_id, attempts
     ) VALUES (
-	  :incident_name, :incident_id, :status, :entities, :start_time, :end_time
+	  :incident_name, :incident_id, :status, :entities, :start_time, :end_time, :task_id, :attempts
 	) RETURNING id`
-	QueryRemByIncidentId = "SELECT * FROM remediations where incident_id=$1"
+	QueryRemByIncidentId = "SELECT * FROM remediations WHERE incident_id=$1"
+	QueryRemByNameEntity = "SELECT * FROM remediations WHERE incident_name=? AND array[?] && entities::text[]"
 
 	QueryUpdateRemById = `UPDATE remediations SET
 	  incident_name=:incident_name, incident_id=:incident_id, status=:status,
-	  entities=:entities, start_time=:start_time, end_time=:end_time
+	  entities=:entities, start_time=:start_time, end_time=:end_time, task_id=:task_id, attempts=:attempts
 	WHERE id=:id`
 
 	QueryInsertNewCmd = `INSERT INTO
@@ -105,6 +109,14 @@ func (db *DB) NewRecord(i interface{}) (int64, error) {
 
 func (db *DB) GetRemediation(query string, args ...interface{}) (*Remediation, error) {
 	rem := &Remediation{}
+	var err error
+	if strings.Contains(query, "?") {
+		query, args, err = sqlx.In(query, args...)
+		if err != nil {
+			return nil, err
+		}
+		query = db.Rebind(query)
+	}
 	if err := db.Get(rem, query, args...); err != nil {
 		return nil, err
 	}
@@ -188,6 +200,8 @@ type Remediation struct {
 	Entities     pq.StringArray
 	StartTime    MyTime     `db:"start_time"`
 	EndTime      MyNullTime `db:"end_time"`
+	TaskId       string     `db:"task_id"`
+	Attempts     int
 }
 
 func (r *Remediation) End(status Status, db Dbase) error {

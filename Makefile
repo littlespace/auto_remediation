@@ -9,24 +9,16 @@ ifdef VERSION
 endif
 
 all:
-		$(MAKE) deps
 		$(MAKE) auto_remediation
-
-deps:
-		go get -u golang.org/x/lint/golint
-		go get -u github.com/golang/dep/cmd/dep
-		dep ensure
 
 auto_remediation:
 		go build -ldflags "$(LDFLAGS)" ./cmd/auto_remediation
 
 debug:
-		dep ensure
 		go build -race ./cmd/auto_remediation
 
 test:
 		go test -v -race -short -failfast ./...
 
 linux:
-		dep ensure
 		GOOS=linux GOARCH=amd64 go build -o auto_remediation_linux ./cmd/auto_remediation

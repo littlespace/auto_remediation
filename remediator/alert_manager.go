@@ -102,7 +102,7 @@ func (a *AlertManager) waitOnStatus(desiredStatus string, id int64, checkInterva
 		default:
 			status, err := a.getStatus(id)
 			if err != nil {
-				glog.Errorf("Failed to check alert %s status: %v", id, err)
+				glog.Errorf("Failed to check alert %d status: %v", id, err)
 				return false
 			}
 			if status == desiredStatus {

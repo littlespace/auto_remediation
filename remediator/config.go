@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const defaultRuleAttempts = 2
+
 type Config struct {
 	AmqpQName          string        `yaml:"amqp_qname"`
 	AmqpAddr           string        `yaml:"amqp_addr"`
@@ -21,6 +23,7 @@ type Config struct {
 	AmOwner            string        `yaml:"am_owner"`
 	AmTeam             string        `yaml:"am_team"`
 	ScriptsPath        string        `yaml:"scripts_path"`
+	CommonOpts         string        `yaml:"common_opts_file"`
 	Timeout            time.Duration
 	DbAddr             string        `yaml:"db_addr"`
 	DbName             string        `yaml:"db_name"`
@@ -30,12 +33,19 @@ type Config struct {
 	SlackUrl           string        `yaml:"slack_url"`
 	SlackChannel       string        `yaml:"slack_channel"`
 	SlackMention       string        `yaml:"slack_mention"`
+	JiraUrl            string        `yaml:"jira_url"`
+	JiraUser           string        `yaml:"jira_username"`
+	JiraPass           string        `yaml:"jira_password"`
+	JiraProject        string        `yaml:"jira_project"`
 }
 
 type Rule struct {
 	AlertName       string `yaml:"alert_name"`
 	Enabled         bool
 	UpCheckDuration time.Duration `yaml:"up_check_duration"`
+	DontEscalate    bool          `yaml:"dont_escalate"`
+	JiraProject     string        `yaml:"jira_project"`
+	Attempts        int
 	Audits          []executor.Command
 	Remediations    []executor.Command
 	OnClear         []executor.Command `yaml:"on_clear"`
@@ -63,6 +73,9 @@ func NewConfig(file string) (*ConfigHandler, error) {
 func (c *ConfigHandler) RuleByName(name string) (Rule, bool) {
 	for _, rule := range c.Rules {
 		if rule.AlertName == name {
+			if rule.Attempts == 0 {
+				rule.Attempts = defaultRuleAttempts
+			}
 			return rule, true
 		}
 	}

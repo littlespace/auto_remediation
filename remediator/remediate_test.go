@@ -3,6 +3,7 @@ package remediator
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/mayuresh82/auto_remediation/executor"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
@@ -57,7 +58,13 @@ func (db *MockDb) UpdateRecord(i interface{}) error {
 }
 
 func (db *MockDb) GetRemediation(query string, args ...interface{}) (*Remediation, error) {
-	return &Remediation{}, nil
+	if args[0].(int64) == int64(44) {
+		return &Remediation{Id: 100, Attempts: 2}, nil
+	}
+	if args[0].(int64) == int64(55) {
+		return &Remediation{Id: 200, Attempts: 3, Status: Status_AUDIT_FAILED}, nil
+	}
+	return nil, fmt.Errorf("not found")
 }
 
 type MockClient struct{}
@@ -97,13 +104,23 @@ func (m *MockNotifier) Send(rem *Remediation, msg string) error {
 	return nil
 }
 
+type MockEscalator struct {
+	escalated []string
+}
+
+func (m *MockEscalator) Escalate(req *EscalationRequest) error {
+	m.escalated = append(m.escalated, req.rem.IncidentName)
+	return nil
+}
+
 func TestIncidentProcessing(t *testing.T) {
 	c := &ConfigHandler{
 		Rules: []Rule{
-			Rule{AlertName: "Test1", Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_passed"]},
+			Rule{AlertName: "Test1", Attempts: 2, Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_passed"]},
 			Rule{AlertName: "Test2", Enabled: false},
-			Rule{AlertName: "Test3", Enabled: true, Audits: cmds["audits_failed"], Remediations: cmds["remediations_passed"]},
-			Rule{AlertName: "Test4", Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_failed"]},
+			Rule{AlertName: "Test3", Attempts: 2, Enabled: true, Audits: cmds["audits_failed"], Remediations: cmds["remediations_passed"]},
+			Rule{AlertName: "Test4", Attempts: 2, Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_failed"]},
+			Rule{AlertName: "Test5", Attempts: 3, Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_passed"]},
 		},
 	}
 	r := &Remediator{
@@ -121,7 +138,8 @@ func TestIncidentProcessing(t *testing.T) {
 		Type: "ACTIVE",
 		Data: map[string]interface{}{
 			"description": "dummy",
-			"entities":    []interface{}{"d1:e1"},
+			"entity":      "e1",
+			"device":      "d1",
 		},
 	}
 	// test no rules
@@ -138,28 +156,81 @@ func TestIncidentProcessing(t *testing.T) {
 	inc.Id = 10
 	assert.Nil(t, r.processIncident(inc))
 
+	// test existing remediation
+	inc.Name = "Test5"
+	inc.Id = 44
+	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(100))
+	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
+	inc.Id = 55
+	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(200))
+	assert.Equal(t, rem.Status, Status_AUDIT_FAILED)
+
 	// test failed audit
 	inc.Name = "Test3"
 	inc.Id = 20
 	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(1))
 	assert.Equal(t, rem.Status, Status_AUDIT_FAILED)
 
 	// test failed remediation
 	inc.Name = "Test4"
 	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(1))
 	assert.Equal(t, rem.Status, Status_REMEDIATION_FAILED)
 
 	// test success
 	inc.Name = "Test1"
 	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(1))
 	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
 
 	// test aggregate incident
 	inc.IsAggregate = true
 	inc.Id = 30
 	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(1))
 	assert.Contains(t, inc.Data, "components")
 	components := inc.Data["components"].([]map[string]interface{})
 	assert.Equal(t, len(components), 2)
 	assert.Equal(t, components[0]["alert"].(float64), float64(40))
+}
+
+func TestIncidentEscalate(t *testing.T) {
+	c := &ConfigHandler{
+		Rules: []Rule{
+			Rule{AlertName: "Test4", Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_failed"]},
+			Rule{AlertName: "Test3", Enabled: true, DontEscalate: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_passed"]},
+		},
+	}
+	mockEsc := &MockEscalator{}
+	r := &Remediator{
+		config:   c,
+		queue:    &MockQueue{},
+		executor: &MockExecutor{},
+		db:       &MockDb{},
+		notif:    &MockNotifier{},
+		esc:      mockEsc,
+		am:       &AlertManager{client: &MockClient{}},
+		exe:      make(map[int64]chan struct{}),
+	}
+	inc := executor.Incident{
+		Name: "Test4",
+		Id:   20,
+		Type: "ACTIVE",
+		Data: map[string]interface{}{
+			"description": "dummy",
+			"entity":      "e1",
+			"device":      "d1",
+		},
+	}
+	rem := r.processIncident(inc)
+	assert.Equal(t, rem.Status, Status_REMEDIATION_FAILED)
+	assert.Contains(t, mockEsc.escalated, inc.Name)
+
+	inc.Name = "Test3"
+	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
+	assert.NotContains(t, mockEsc.escalated, inc.Name)
 }

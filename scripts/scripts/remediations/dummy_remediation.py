@@ -6,8 +6,9 @@ import sys
 
 class DummyRemediation:
 
-    def __init__(self, logger):
+    def __init__(self, logger, opts):
         self.logger = logger
+        self.opts = opts
 
     def run(self, inp, args):
         self.logger.info('Got incident Name: {}, Id: {}'.format(

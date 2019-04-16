@@ -14,6 +14,7 @@ import (
 )
 
 const defaultTimeout = 30 * time.Second
+const runnerCmd = "runner.py"
 
 type Command struct {
 	Input   Incident
@@ -35,11 +36,12 @@ type Executioner interface {
 }
 
 type Executor struct {
-	cmdsPath string
+	cmdsPath   string
+	commonOpts string
 }
 
-func NewExecutor(cmdsPath string) Executioner {
-	return &Executor{cmdsPath: cmdsPath}
+func NewExecutor(cmdsPath, commonOpts string) Executioner {
+	return &Executor{cmdsPath: cmdsPath, commonOpts: commonOpts}
 }
 
 func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int) map[*Command]*CmdResult {
@@ -59,8 +61,10 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 			}
 			ctx, cancel := context.WithTimeout(ctx, cmd.Timeout)
 			defer cancel()
-			fullPath := filepath.Join(e.cmdsPath, cmd.Command)
-			command := exec.CommandContext(ctx, fullPath, cmd.Args...)
+			fullPath := filepath.Join(e.cmdsPath, runnerCmd)
+			args := []string{"--script_name", cmd.Command, "--common_opts_file", e.commonOpts}
+			args = append(args, cmd.Args...)
+			command := exec.CommandContext(ctx, fullPath, args...)
 			// start the command in its own pg
 			command.SysProcAttr = &syscall.SysProcAttr{
 				Setpgid: true,
