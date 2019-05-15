@@ -6,9 +6,7 @@ from scripts.remediations import common
 
 class HighCpu:
 
-    db_query = '''
-        SELECT moving_average("cpu-idle", 10)  FROM "telegraf"."autogen"."jnpr_routing_engine" WHERE time > :dashboardTime: AND "device"='{device}'  FILL(null)
-    '''
+    db_query = '''SELECT moving_average("cpu-idle", 10)  FROM "telegraf"."autogen"."jnpr_routing_engine" WHERE time > :dashboardTime: AND "device"='{device}'  FILL(null)'''
 
     junos_cmd = 'show system processes summary'
 

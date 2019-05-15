@@ -60,7 +60,7 @@ def run_junos_command(device, command, opts, port=22):
         'gather_facts': False,
         'auto_probe': 0
     }
-    if pwd:
+    if password:
         kwargs['password'] = password
     if keyfile:
         kwargs['ssh_private_key_file'] = keyfile

@@ -1,16 +1,17 @@
-package remediator
+package models
 
 import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"net"
+	"strings"
+	"time"
+
 	"github.com/golang/glog"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/mayuresh82/auto_remediation/executor"
-	"net"
-	"strings"
-	"time"
 )
 
 var schema = `
@@ -42,7 +43,7 @@ var (
 	  :incident_name, :incident_id, :status, :entities, :start_time, :end_time, :task_id, :attempts
 	) RETURNING id`
 	QueryRemByIncidentId = "SELECT * FROM remediations WHERE incident_id=$1"
-	QueryRemByNameEntity = "SELECT * FROM remediations WHERE incident_name=? AND array[?] && entities::text[]"
+	QueryRemByNameEntity = "SELECT * FROM remediations WHERE incident_name=? AND entities @> ARRAY[?]::varchar[]"
 
 	QueryUpdateRemById = `UPDATE remediations SET
 	  incident_name=:incident_name, incident_id=:incident_id, status=:status,
@@ -60,7 +61,7 @@ var (
 type Dbase interface {
 	UpdateRecord(i interface{}) error
 	NewRecord(i interface{}) (int64, error)
-	GetRemediation(query string, args ...interface{}) (*Remediation, error)
+	GetRemediations(query string, args ...interface{}) ([]*Remediation, error)
 	Close() error
 }
 
@@ -107,8 +108,8 @@ func (db *DB) NewRecord(i interface{}) (int64, error) {
 	return newId, err
 }
 
-func (db *DB) GetRemediation(query string, args ...interface{}) (*Remediation, error) {
-	rem := &Remediation{}
+func (db *DB) GetRemediations(query string, args ...interface{}) ([]*Remediation, error) {
+	var rem []*Remediation
 	var err error
 	if strings.Contains(query, "?") {
 		query, args, err = sqlx.In(query, args...)
@@ -117,10 +118,8 @@ func (db *DB) GetRemediation(query string, args ...interface{}) (*Remediation, e
 		}
 		query = db.Rebind(query)
 	}
-	if err := db.Get(rem, query, args...); err != nil {
-		return nil, err
-	}
-	return rem, nil
+	err = db.Select(&rem, query, args...)
+	return rem, err
 }
 
 type MyTime struct {
@@ -172,6 +171,15 @@ func (t *MyNullTime) Scan(src interface{}) error {
 
 type Status int
 
+func (s Status) String() string {
+	for str, val := range StatusMap {
+		if val == s {
+			return str
+		}
+	}
+	return "unknown"
+}
+
 const (
 	Status_ACTIVE              Status = 1
 	Status_AUDIT_FAILED        Status = 2
@@ -182,7 +190,7 @@ const (
 	Status_ERROR               Status = 7
 )
 
-var statusMap = map[string]Status{
+var StatusMap = map[string]Status{
 	"active":              Status_ACTIVE,
 	"audit_failed":        Status_AUDIT_FAILED,
 	"remediation_failed":  Status_REMEDIATION_FAILED,
@@ -190,6 +198,17 @@ var statusMap = map[string]Status{
 	"onclear_failed":      Status_ONCLEAR_FAILED,
 	"onclear_success":     Status_ONCLEAR_SUCCESS,
 	"error":               Status_ERROR,
+}
+
+var StatusFailed = []Status{Status_AUDIT_FAILED, Status_REMEDIATION_FAILED}
+
+func (s Status) IsFailed() bool {
+	for _, status := range StatusFailed {
+		if s == status {
+			return true
+		}
+	}
+	return false
 }
 
 type Remediation struct {

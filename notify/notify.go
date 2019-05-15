@@ -1,4 +1,4 @@
-package remediator
+package notify
 
 import (
 	"bytes"
@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/mayuresh82/auto_remediation/models"
 )
 
 type Notifier interface {
-	Send(rem *Remediation, msg string) error
+	Send(rem *models.Remediation, msg string) error
 }
 
 type SlackNotifier struct {
@@ -21,7 +22,7 @@ type SlackNotifier struct {
 	Mention string
 }
 
-func (n *SlackNotifier) Send(rem *Remediation, msg string) error {
+func (n *SlackNotifier) Send(rem *models.Remediation, msg string) error {
 	message := n.Mention + " " + msg
 	fields := []map[string]interface{}{
 		map[string]interface{}{

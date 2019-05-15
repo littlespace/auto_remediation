@@ -6,9 +6,7 @@ from scripts.remediations import common
 
 class PortErrors:
 
-    db_query = '''
-        SELECT non_negative_derivative("input-errors", 1s) FROM "telegraf"."autogen"."jnpr_interface_error" WHERE time > :dashboardTime: AND "device"='{device}' AND "interface"='{intf}' FILL(null)
-    '''
+    db_query = '''SELECT non_negative_derivative("input-errors", 1s) FROM "telegraf"."autogen"."jnpr_interface_error" WHERE time > :dashboardTime: AND "device"='{device}' AND "interface"='{intf}' FILL(null)'''
 
     junos_cmd = 'show interfaces {intf} statistics'
 
@@ -26,10 +24,6 @@ class PortErrors:
             'Description': f"{inp['data'].get('description', '')}",
             'Start Time': f"{inp['start_time']}",
         }
-        if not username or not (password or keyfile):
-            self.logger.error('Username and password required')
-            common.exit(out, False)
-
         cmd = self.junos_cmd.format(intf=inp['data']['entity'])
         try:
             output = common.run_junos_command(device, cmd, self.opts)

@@ -14,7 +14,8 @@ import (
 )
 
 const defaultTimeout = 30 * time.Second
-const runnerCmd = "runner.py"
+
+var runnerCmd string = "runner.py"
 
 type Command struct {
 	Input   Incident

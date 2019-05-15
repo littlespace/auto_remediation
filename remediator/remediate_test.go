@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/mayuresh82/auto_remediation/executor"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mayuresh82/auto_remediation/escalate"
+	"github.com/mayuresh82/auto_remediation/executor"
+	"github.com/mayuresh82/auto_remediation/models"
+	"github.com/stretchr/testify/assert"
 )
 
 type MockQueue struct {
@@ -43,7 +47,9 @@ func (e *MockExecutor) Execute(ctx context.Context, cmds []executor.Command, max
 	return ret
 }
 
-type MockDb struct{}
+type MockDb struct {
+	getRemediations func() ([]*models.Remediation, error)
+}
 
 func (d MockDb) Close() error {
 	return nil
@@ -57,12 +63,9 @@ func (db *MockDb) UpdateRecord(i interface{}) error {
 	return nil
 }
 
-func (db *MockDb) GetRemediation(query string, args ...interface{}) (*Remediation, error) {
-	if args[0].(int64) == int64(44) {
-		return &Remediation{Id: 100, Attempts: 2}, nil
-	}
-	if args[0].(int64) == int64(55) {
-		return &Remediation{Id: 200, Attempts: 3, Status: Status_AUDIT_FAILED}, nil
+func (db *MockDb) GetRemediations(query string, args ...interface{}) ([]*models.Remediation, error) {
+	if db.getRemediations != nil {
+		return db.getRemediations()
 	}
 	return nil, fmt.Errorf("not found")
 }
@@ -100,7 +103,7 @@ var cmds = map[string][]executor.Command{
 
 type MockNotifier struct{}
 
-func (m *MockNotifier) Send(rem *Remediation, msg string) error {
+func (m *MockNotifier) Send(rem *models.Remediation, msg string) error {
 	return nil
 }
 
@@ -108,8 +111,23 @@ type MockEscalator struct {
 	escalated []string
 }
 
-func (m *MockEscalator) Escalate(req *EscalationRequest) error {
-	m.escalated = append(m.escalated, req.rem.IncidentName)
+func (m *MockEscalator) Escalate(req *escalate.EscalationRequest) error {
+	m.escalated = append(m.escalated, req.Rem.IncidentName)
+	return nil
+}
+
+func (m *MockEscalator) LoadTask(t *escalate.Task) error {
+	t.Status = escalate.TaskStatusOpen
+	n := time.Now()
+	if t.ID == "TASK1" {
+		t.Created = n
+	}
+	if t.ID == "TASK2" {
+		t.Created = n.Add(5 * time.Minute)
+	}
+	if t.ID == "TASK3" {
+		t.Status = escalate.TaskStatusClosed
+	}
 	return nil
 }
 
@@ -123,11 +141,13 @@ func TestIncidentProcessing(t *testing.T) {
 			Rule{AlertName: "Test5", Attempts: 3, Enabled: true, Audits: cmds["audits_passed"], Remediations: cmds["remediations_passed"]},
 		},
 	}
+	db := &MockDb{}
 	r := &Remediator{
 		config:   c,
 		queue:    &MockQueue{},
 		executor: &MockExecutor{},
-		db:       &MockDb{},
+		db:       db,
+		esc:      &MockEscalator{},
 		notif:    &MockNotifier{},
 		am:       &AlertManager{client: &MockClient{}},
 		exe:      make(map[int64]chan struct{}),
@@ -143,48 +163,68 @@ func TestIncidentProcessing(t *testing.T) {
 		},
 	}
 	// test no rules
-	inc.Name = "Test5"
+	inc.Name = "Test6"
 	rem := r.processIncident(inc)
 	assert.Nil(t, rem)
-	// rest inactive rule
+	// test inactive rule
 	inc.Name = "Test2"
 	rem = r.processIncident(inc)
 	assert.Nil(t, rem)
 
 	// test inactive alert
+	db.getRemediations = func() ([]*models.Remediation, error) { return []*models.Remediation{}, nil }
 	inc.Name = "Test1"
 	inc.Id = 10
 	assert.Nil(t, r.processIncident(inc))
 
 	// test existing remediation
+	db.getRemediations = func() ([]*models.Remediation, error) {
+		return []*models.Remediation{&models.Remediation{Id: 100, Attempts: 2, Status: models.Status_REMEDIATION_FAILED}}, nil
+	}
 	inc.Name = "Test5"
 	inc.Id = 44
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(100))
-	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
+	assert.Equal(t, rem.Status, models.Status_REMEDIATION_SUCCESS)
+
+	db.getRemediations = func() ([]*models.Remediation, error) {
+		return []*models.Remediation{
+			&models.Remediation{Id: 100, Attempts: 2, TaskId: "TASK1"},
+			&models.Remediation{Id: 200, Attempts: 2, TaskId: "TASK2", Status: models.Status_REMEDIATION_FAILED},
+			&models.Remediation{Id: 300, Attempts: 2, TaskId: "TASK3"},
+		}, nil
+	}
+	rem = r.processIncident(inc)
+	assert.Equal(t, rem.Id, int64(200))
+	assert.Equal(t, rem.Status, models.Status_REMEDIATION_SUCCESS)
+
+	db.getRemediations = func() ([]*models.Remediation, error) {
+		return []*models.Remediation{&models.Remediation{Id: 200, Attempts: 3, Status: models.Status_AUDIT_FAILED}}, nil
+	}
 	inc.Id = 55
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(200))
-	assert.Equal(t, rem.Status, Status_AUDIT_FAILED)
+	assert.Equal(t, rem.Status, models.Status_AUDIT_FAILED)
 
+	db.getRemediations = func() ([]*models.Remediation, error) { return []*models.Remediation{}, nil }
 	// test failed audit
 	inc.Name = "Test3"
 	inc.Id = 20
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(1))
-	assert.Equal(t, rem.Status, Status_AUDIT_FAILED)
+	assert.Equal(t, rem.Status, models.Status_AUDIT_FAILED)
 
 	// test failed remediation
 	inc.Name = "Test4"
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(1))
-	assert.Equal(t, rem.Status, Status_REMEDIATION_FAILED)
+	assert.Equal(t, rem.Status, models.Status_REMEDIATION_FAILED)
 
 	// test success
 	inc.Name = "Test1"
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(1))
-	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
+	assert.Equal(t, rem.Status, models.Status_REMEDIATION_SUCCESS)
 
 	// test aggregate incident
 	inc.IsAggregate = true
@@ -226,11 +266,11 @@ func TestIncidentEscalate(t *testing.T) {
 		},
 	}
 	rem := r.processIncident(inc)
-	assert.Equal(t, rem.Status, Status_REMEDIATION_FAILED)
+	assert.Equal(t, rem.Status, models.Status_REMEDIATION_FAILED)
 	assert.Contains(t, mockEsc.escalated, inc.Name)
 
 	inc.Name = "Test3"
 	rem = r.processIncident(inc)
-	assert.Equal(t, rem.Status, Status_REMEDIATION_SUCCESS)
+	assert.Equal(t, rem.Status, models.Status_REMEDIATION_SUCCESS)
 	assert.NotContains(t, mockEsc.escalated, inc.Name)
 }
