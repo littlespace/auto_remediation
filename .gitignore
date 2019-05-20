@@ -1,6 +1,6 @@
 *.swp
 bin/
-auto_remediation
+./auto_remediation
 vendor/
 *.pyc
 __pycache__
