@@ -30,6 +30,7 @@ type CmdResult struct {
 	Error   error
 	Stdout  string
 	Stderr  string
+	Runtime time.Duration
 }
 
 type Executioner interface {
@@ -98,6 +99,7 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 				ret[&cmd] = &CmdResult{Error: fmt.Errorf("Unable to start cmd: %s: %v", fullPath, err)}
 				return
 			}
+			startTime := time.Now()
 			res := &CmdResult{}
 			serr, _ := ioutil.ReadAll(stderr)
 			res.Stderr = string(serr)
@@ -113,6 +115,7 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 			} else {
 				res.Error = err
 			}
+			res.Runtime = time.Now().Sub(startTime)
 			ret[&cmd] = res
 		}(cmd)
 	}

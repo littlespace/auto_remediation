@@ -1,4 +1,6 @@
 import sys
+import requests
+import time
 from lxml import etree
 from jnpr.junos import Device
 from jira import JIRA, JIRAError
@@ -72,6 +74,37 @@ def run_junos_command(device, command, opts, port=22):
         raise CommonException('failed to run command on device: {}'.format(ex))
     output = etree.tostring(result, encoding='unicode')
     return output
+
+
+def run_awx_job(url, token, job_id, extra_vars, limit=None, timeout=90):
+    u = url + '/api/v2/job_templates/{}/launch/'.format(job_id)
+    body = {
+        'job_type': 'run',
+        'extra_vars': extra_vars
+    }
+    if limit:
+        body['limit'] = limit
+    headers = {
+        'Authorization': 'Bearer {}'.format(token),
+        'Content-Type': 'Application/Json'
+    }
+    resp = requests.post(u, headers=headers, json=body)
+    resp.raise_for_status()
+    job = resp.json()
+    job_id = job.get('job')
+    if not job_id:
+        raise CommonException('Failed to start AWX job')
+    job_url = url + job['url']
+    start = time.time()
+    while time.time() - start <= timeout:
+        resp = requests.get(job_url, headers=headers)
+        job = resp.json()
+        if job['status'] in ['successful', 'failed']:
+            break
+        time.sleep(7)
+    if job['failed']:
+        return job_id, False
+    return job_id, True
 
 
 def exit(out, passed):

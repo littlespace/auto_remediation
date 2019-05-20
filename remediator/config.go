@@ -24,7 +24,7 @@ type Config struct {
 	AmTeam             string        `yaml:"am_team"`
 	ScriptsPath        string        `yaml:"scripts_path"`
 	CommonOpts         string        `yaml:"common_opts_file"`
-	Timeout            time.Duration
+	IncidentTimeout    time.Duration `yaml:"incident_timeout"`
 	DbAddr             string        `yaml:"db_addr"`
 	DbName             string        `yaml:"db_name"`
 	DbUsername         string        `yaml:"db_username"`

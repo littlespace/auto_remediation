@@ -31,6 +31,7 @@ var schema = `
 	remediation_id INT NOT NULL,
 	command TEXT,
 	retcode SMALLINT,
+	runtime INT,
 	logs TEXT,
 	results TEXT);
   `
@@ -52,9 +53,9 @@ var (
 
 	QueryInsertNewCmd = `INSERT INTO
 	commands (
-		remediation_id, command, retcode, logs, results
+		remediation_id, command, retcode, runtime, logs, results
 	) VALUES (
-		:remediation_id, :command, :retcode, :logs, :results
+		:remediation_id, :command, :retcode, :runtime, :logs, :results
 	) RETURNING id`
 )
 
@@ -258,6 +259,7 @@ type Command struct {
 	RemediationId int64 `db:"remediation_id"`
 	Command       string
 	Retcode       int
+	Runtime       int64
 	Logs          string
 	Results       string
 }

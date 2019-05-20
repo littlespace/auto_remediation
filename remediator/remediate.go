@@ -83,7 +83,7 @@ func (r *Remediator) Start(ctx context.Context) {
 		select {
 		case newIncident := <-r.recv:
 			// dont process incidents that have timed out
-			if time.Now().Sub(newIncident.AddedAt) >= r.config.Config.Timeout {
+			if time.Now().Sub(newIncident.AddedAt) >= r.config.Config.IncidentTimeout {
 				glog.V(2).Infof("Not processing timed out incident: %d:%s", newIncident.Id, newIncident.Name)
 				continue
 			}
@@ -160,6 +160,7 @@ func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []execu
 			Retcode:       result.RetCode,
 			Logs:          result.Stderr,
 			Results:       result.Stdout,
+			Runtime:       int64(result.Runtime.Seconds()),
 		}
 		ret = append(ret, c)
 		if _, err := r.db.NewRecord(c); err != nil {
@@ -233,27 +234,25 @@ func (r *Remediator) remediationForIncident(incident executor.Incident) *models.
 	sort.Slice(existing, func(i, j int) bool {
 		return existing[i].StartTime.After(existing[j].StartTime.Time)
 	})
-	current := existing[0]
-	if len(existing) > 1 {
-		// pick the most recent open task
-		var tasks escalate.Tasks
-		for _, rem := range existing {
-			task := &escalate.Task{ID: rem.TaskId}
-			if err := r.esc.LoadTask(task); err != nil {
-				glog.Errorf("Failed to load task: %s : %v", rem.TaskId, err)
-				continue
-			}
-			if task.Status == escalate.TaskStatusOpen {
-				tasks = append(tasks, task)
-			}
+	var current *models.Remediation
+	// pick the most recent open task
+	var tasks escalate.Tasks
+	for _, rem := range existing {
+		task := &escalate.Task{ID: rem.TaskId}
+		if err := r.esc.LoadTask(task); err != nil {
+			glog.Errorf("Failed to load task: %s : %v", rem.TaskId, err)
+			continue
 		}
-		latest := tasks.Latest()
-		if latest != nil {
-			for _, rem := range existing {
-				if rem.TaskId == latest.ID {
-					current = rem
-					break
-				}
+		if task.Status == escalate.TaskStatusOpen {
+			tasks = append(tasks, task)
+		}
+	}
+	latest := tasks.Latest()
+	if latest != nil {
+		for _, rem := range existing {
+			if rem.TaskId == latest.ID {
+				current = rem
+				break
 			}
 		}
 	}

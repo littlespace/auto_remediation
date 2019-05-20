@@ -113,12 +113,7 @@ func NewJiraEscalator(url, user, pass, project string) (*JiraEscalator, error) {
 
 func (j *JiraEscalator) Escalate(req *EscalationRequest) error {
 	if req.Rem.TaskId != "" {
-		cmt := req.Params["comment"]
-		if desc, ok := req.Params["description"]; ok {
-			cmt += "\n" + desc
-		}
-		err := j.client.AddComment(req.Rem.TaskId, &jira.Comment{Body: cmt})
-		return err
+		return j.client.AddComment(req.Rem.TaskId, &jira.Comment{Body: req.Params["comment"]})
 	}
 	summary := fmt.Sprintf("Incident: %d:%s", req.Inc.Id, req.Inc.Name)
 	project := req.Params["project"]
