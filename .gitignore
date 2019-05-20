@@ -4,4 +4,3 @@ bin/
 vendor/
 *.pyc
 __pycache__
-scripts/
