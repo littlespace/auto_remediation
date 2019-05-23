@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	am "github.com/mayuresh82/auto_remediation/alert_manager"
 	"github.com/mayuresh82/auto_remediation/escalate"
 	"github.com/mayuresh82/auto_remediation/executor"
 	"github.com/mayuresh82/auto_remediation/models"
@@ -49,6 +50,7 @@ func (e *MockExecutor) Execute(ctx context.Context, cmds []executor.Command, max
 
 type MockDb struct {
 	getRemediations func() ([]*models.Remediation, error)
+	*models.DB
 }
 
 func (d MockDb) Close() error {
@@ -143,13 +145,13 @@ func TestIncidentProcessing(t *testing.T) {
 	}
 	db := &MockDb{}
 	r := &Remediator{
-		config:   c,
+		Config:   c,
+		Db:       db,
 		queue:    &MockQueue{},
 		executor: &MockExecutor{},
-		db:       db,
 		esc:      &MockEscalator{},
 		notif:    &MockNotifier{},
-		am:       &AlertManager{client: &MockClient{}},
+		am:       &am.AlertManager{Client: &MockClient{}},
 		exe:      make(map[int64]chan struct{}),
 	}
 	inc := executor.Incident{
@@ -246,13 +248,13 @@ func TestIncidentEscalate(t *testing.T) {
 	}
 	mockEsc := &MockEscalator{}
 	r := &Remediator{
-		config:   c,
+		Config:   c,
+		Db:       &MockDb{},
 		queue:    &MockQueue{},
 		executor: &MockExecutor{},
-		db:       &MockDb{},
 		notif:    &MockNotifier{},
 		esc:      mockEsc,
-		am:       &AlertManager{client: &MockClient{}},
+		am:       &am.AlertManager{Client: &MockClient{}},
 		exe:      make(map[int64]chan struct{}),
 	}
 	inc := executor.Incident{

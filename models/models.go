@@ -63,6 +63,7 @@ type Dbase interface {
 	UpdateRecord(i interface{}) error
 	NewRecord(i interface{}) (int64, error)
 	GetRemediations(query string, args ...interface{}) ([]*Remediation, error)
+	Query(table string, params map[string]interface{}) ([]interface{}, error)
 	Close() error
 }
 
@@ -121,6 +122,39 @@ func (db *DB) GetRemediations(query string, args ...interface{}) ([]*Remediation
 	}
 	err = db.Select(&rem, query, args...)
 	return rem, err
+}
+
+func (db *DB) Query(table string, params map[string]interface{}) ([]interface{}, error) {
+	baseQ := fmt.Sprintf("SELECT * FROM %s", table)
+	if len(params) > 0 {
+		baseQ += " WHERE "
+		c := 0
+		for field := range params {
+			baseQ += fmt.Sprintf("%s=:%s", field, field)
+			if c < len(params)-1 {
+				baseQ += " AND "
+			}
+			c++
+		}
+	}
+	var items []interface{}
+	query, args, err := sqlx.Named(baseQ, params)
+	query = db.Rebind(query)
+	switch table {
+	case "remediations":
+		var rems []*Remediation
+		err = db.Select(&rems, query, args...)
+		for _, r := range rems {
+			items = append(items, r)
+		}
+	case "commands":
+		var cmds []*Command
+		err = db.Select(&cmds, query, args...)
+		for _, c := range cmds {
+			items = append(items, c)
+		}
+	}
+	return items, err
 }
 
 type MyTime struct {

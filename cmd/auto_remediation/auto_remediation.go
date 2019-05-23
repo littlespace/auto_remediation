@@ -4,17 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/mayuresh82/auto_remediation/remediator"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"github.com/golang/glog"
+	"github.com/mayuresh82/auto_remediation/api"
+	"github.com/mayuresh82/auto_remediation/remediator"
 )
 
 var (
+	apiAddr     = flag.String("api-addr", ":8080", "API Listen Address")
 	pprofAddr   = flag.String("pprof-addr", "", "pprof address to listen on, dont activate pprof if empty")
 	config      = flag.String("config", "", "Config file")
 	fVersion    = flag.Bool("version", false, "display the version")
@@ -65,6 +68,9 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	go rem.Start(ctx)
+
+	apiSrv := api.NewServer(*apiAddr, rem)
+	go apiSrv.Start(ctx)
 
 	// wait for sig
 	signalChan := make(chan os.Signal, 1)

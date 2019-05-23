@@ -6,6 +6,7 @@ require (
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/google/go-querystring v1.0.0 // indirect
+	github.com/gorilla/mux v1.7.2
 	github.com/jmoiron/sqlx v1.2.0
 	github.com/lib/pq v1.0.0
 	github.com/pkg/errors v0.8.1 // indirect

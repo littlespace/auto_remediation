@@ -18,11 +18,11 @@ const defaultTimeout = 30 * time.Second
 var runnerCmd string = "runner.py"
 
 type Command struct {
-	Input   Incident
+	Input   *Incident `json:",omitempty"`
 	Name    string
 	Command string
-	Args    []string
-	Timeout time.Duration
+	Args    []string      `json:",omitempty"`
+	Timeout time.Duration `json:",omitempty"`
 }
 
 type CmdResult struct {

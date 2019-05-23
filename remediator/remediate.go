@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	am "github.com/mayuresh82/auto_remediation/alert_manager"
 	"github.com/mayuresh82/auto_remediation/escalate"
 	"github.com/mayuresh82/auto_remediation/executor"
 	"github.com/mayuresh82/auto_remediation/models"
@@ -15,11 +16,11 @@ import (
 )
 
 type Remediator struct {
-	config   *ConfigHandler
+	Config   *ConfigHandler
+	Db       models.Dbase
 	queue    executor.IncidentQueue
 	executor executor.Executioner
-	db       models.Dbase
-	am       *AlertManager
+	am       *am.AlertManager
 	notif    notify.Notifier
 	esc      escalate.Escalator
 	recv     chan executor.Incident
@@ -40,13 +41,13 @@ func NewRemediator(configFile string) (*Remediator, error) {
 	recv := make(chan executor.Incident)
 	q.Register(recv)
 	db := models.NewDB(config.DbAddr, config.DbUsername, config.DbPassword, config.DbName, config.DbTimeout)
-	am := NewAlertManager(config.AlertManagerAddr, config.AmUsername, config.AmPassword, config.AmOwner, config.AmTeam)
+	amgr := am.NewAlertManager(config.AlertManagerAddr, config.AmUsername, config.AmPassword, config.AmOwner, config.AmTeam)
 	r := &Remediator{
-		config:   c,
+		Config:   c,
+		Db:       db,
 		queue:    q,
 		executor: executor.NewExecutor(config.ScriptsPath, config.CommonOpts),
-		db:       db,
-		am:       am,
+		am:       amgr,
 		recv:     recv,
 		exe:      make(map[int64]chan struct{}),
 	}
@@ -71,7 +72,7 @@ func getCmds(incident executor.Incident, inCmds []executor.Command) []executor.C
 			Command: cmd.Command,
 			Args:    cmd.Args,
 			Timeout: cmd.Timeout,
-			Input:   incident,
+			Input:   &incident,
 		})
 	}
 	return cmds
@@ -83,7 +84,7 @@ func (r *Remediator) Start(ctx context.Context) {
 		select {
 		case newIncident := <-r.recv:
 			// dont process incidents that have timed out
-			if time.Now().Sub(newIncident.AddedAt) >= r.config.Config.IncidentTimeout {
+			if time.Now().Sub(newIncident.AddedAt) >= r.Config.Config.IncidentTimeout {
 				glog.V(2).Infof("Not processing timed out incident: %d:%s", newIncident.Id, newIncident.Name)
 				continue
 			}
@@ -102,7 +103,7 @@ func (r *Remediator) Close() {
 		<-e
 		glog.V(2).Infof("Done executing remediation %d", id)
 	}
-	r.db.Close()
+	r.Db.Close()
 }
 
 func (r *Remediator) notify(rem *models.Remediation, msg string) {
@@ -120,7 +121,7 @@ func (r *Remediator) escalate(rem *models.Remediation, inc executor.Incident, ru
 		params["comment"] = "This incident has now CLEARED"
 	}
 	if rule.JiraProject == "" {
-		params["project"] = r.config.Config.JiraProject
+		params["project"] = r.Config.Config.JiraProject
 	}
 	for _, exeRes := range exeResults {
 		params["description"] += fmt.Sprintf("%s Output: \n%s\n\n", exeRes.Command, exeRes.Results)
@@ -132,7 +133,7 @@ func (r *Remediator) escalate(rem *models.Remediation, inc executor.Incident, ru
 	if err := r.esc.Escalate(req); err != nil {
 		glog.Errorf("Failed to escalate rem %d / inc %d : %v", rem.Id, inc.Id, err)
 	}
-	if err := r.db.UpdateRecord(rem); err != nil {
+	if err := r.Db.UpdateRecord(rem); err != nil {
 		glog.Errorf("Failed to update rem in db: %v", err)
 	}
 }
@@ -163,20 +164,20 @@ func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []execu
 			Runtime:       int64(result.Runtime.Seconds()),
 		}
 		ret = append(ret, c)
-		if _, err := r.db.NewRecord(c); err != nil {
+		if _, err := r.Db.NewRecord(c); err != nil {
 			glog.Errorf("Failed to save cmd to db: %v", err)
 		}
 		if result.RetCode != 0 {
 			glog.V(2).Infof("Cmd %s failed with retcode %d and error %v", cmd.Name, result.RetCode, result.Error)
 			glog.V(2).Infof("%s failed for incident %s", itype, rem.IncidentName)
 			statusStr := fmt.Sprintf("%s_failed", itype)
-			rem.End(models.StatusMap[statusStr], r.db)
+			rem.End(models.StatusMap[statusStr], r.Db)
 			return ret, false
 		}
 		if result.Error != nil {
 			errStr := fmt.Sprintf("Failed to run cmd %s: %v", cmd.Name, result.Error)
 			glog.V(2).Infof(errStr)
-			rem.End(models.Status_ERROR, r.db)
+			rem.End(models.Status_ERROR, r.Db)
 			c.Results = errStr
 			return ret, false
 		}
@@ -186,7 +187,7 @@ func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []execu
 
 func (r *Remediator) processIncident(incident executor.Incident) *models.Remediation {
 	glog.V(2).Infof("Processing incident: %s:%d", incident.Name, incident.Id)
-	rule, ok := r.config.RuleByName(incident.Name)
+	rule, ok := r.Config.RuleByName(incident.Name)
 	if !ok {
 		glog.Errorf("No rule defined for Incident %s", incident.Name)
 		return nil
@@ -196,8 +197,8 @@ func (r *Remediator) processIncident(incident executor.Incident) *models.Remedia
 		return nil
 	}
 	if incident.IsAggregate {
-		url := fmt.Sprintf("%s?agg_id=%d", alertPath, incident.Id)
-		components, err := r.am.getAlerts(url)
+		url := fmt.Sprintf("%s?agg_id=%d", am.AlertPath, incident.Id)
+		components, err := r.am.GetAlerts(url)
 		if err != nil {
 			glog.Errorf("Failed to query components for incident %d", incident.Id)
 			return nil
@@ -216,13 +217,13 @@ func (r *Remediator) processIncident(incident executor.Incident) *models.Remedia
 
 func (r *Remediator) remediationForIncident(incident executor.Incident) *models.Remediation {
 	rem := models.NewRemediation(incident)
-	existing, err := r.db.GetRemediations(models.QueryRemByIncidentId, rem.IncidentId)
+	existing, err := r.Db.GetRemediations(models.QueryRemByIncidentId, rem.IncidentId)
 	if err != nil {
 		glog.Errorf("Failed to get remediations: %v", err)
 		return nil
 	}
 	if len(existing) == 0 {
-		existing, err = r.db.GetRemediations(models.QueryRemByNameEntity, rem.IncidentName, []string(rem.Entities))
+		existing, err = r.Db.GetRemediations(models.QueryRemByNameEntity, rem.IncidentName, []string(rem.Entities))
 		if err != nil {
 			glog.Errorf("Failed to get remediations: %v", err)
 			return nil
@@ -281,21 +282,21 @@ func (r *Remediator) checkExisting(incident executor.Incident, rule Rule) (*mode
 func (r *Remediator) processActive(incident executor.Incident, rule Rule) *models.Remediation {
 	rem, done := r.checkExisting(incident, rule)
 	if done {
-		r.am.postAck(incident.Id)
+		r.am.PostAck(incident.Id)
 		return rem
 	}
 	if rem == nil {
 		rem = models.NewRemediation(incident)
 	}
-	config := r.config.Config
-	isActive := r.am.assertStatus("ACTIVE", incident.Id, config.AlertCheckInterval, rule.UpCheckDuration)
+	config := r.Config.Config
+	isActive := r.am.AssertStatus("ACTIVE", incident.Id, config.AlertCheckInterval, rule.UpCheckDuration)
 	if !isActive {
 		glog.V(2).Infof("Alert %d is not ACTIVE, skip remediation run", incident.Id)
 		return nil
 	}
 	glog.V(2).Infof("Incident %s is active, proceeding with remediation", incident.Name)
 	if rem.Id == 0 {
-		newId, err := r.db.NewRecord(rem)
+		newId, err := r.Db.NewRecord(rem)
 		if err != nil {
 			glog.Errorf("Failed to save remediation to db: %v", err)
 		}
@@ -319,10 +320,10 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 		glog.Errorf("Remediation run failed")
 		r.notify(rem, "Remediation run failed")
 	} else {
-		rem.End(models.Status_REMEDIATION_SUCCESS, r.db)
+		rem.End(models.Status_REMEDIATION_SUCCESS, r.Db)
 		r.notify(rem, "Remediation Successful")
 	}
-	r.am.postAck(incident.Id)
+	r.am.PostAck(incident.Id)
 	r.escalate(rem, incident, rule, exeResults)
 	return rem
 }
@@ -351,7 +352,7 @@ func (r *Remediator) processCleared(incident executor.Incident, rule Rule) *mode
 	cmds := getCmds(incident, rule.OnClear)
 	exeResults, passed = r.execute(rem, "onclear", cmds)
 	if passed {
-		rem.End(models.Status_ONCLEAR_SUCCESS, r.db)
+		rem.End(models.Status_ONCLEAR_SUCCESS, r.Db)
 		r.notify(rem, "Incident cleared")
 	}
 	return rem
