@@ -3,8 +3,6 @@ package escalate
 import (
 	"testing"
 
-	"github.com/mayuresh82/auto_remediation/executor"
-	"github.com/mayuresh82/auto_remediation/models"
 	"github.com/stretchr/testify/assert"
 	jira "gopkg.in/andygrunwald/go-jira.v1"
 )
@@ -25,24 +23,28 @@ func (c *mockJiraClient) Create(i *jira.Issue) (*jira.Issue, error) {
 
 func (c *mockJiraClient) GetIssue(issueKey string) (*jira.Issue, error) {
 	return &jira.Issue{
-		Key: "TASK-444", Fields: &jira.IssueFields{Status: &jira.Status{Name: "Open"}},
+		Key: issueKey, Fields: &jira.IssueFields{
+			Status:  &jira.Status{Name: "Open"},
+			Summary: "foobar",
+		},
 	}, nil
 }
 
-func TestJiraEscalate(t *testing.T) {
+func (c *mockJiraClient) UpdateIssue(issueKey string, data map[string]interface{}) error {
+	return nil
+}
+
+func TestJiraCreate(t *testing.T) {
 	client := &mockJiraClient{}
 	esc := &JiraEscalator{project: "PROJ-1", client: client}
-	req := &EscalationRequest{
-		Rem: &models.Remediation{}, Inc: executor.Incident{Id: 100, Name: "Dummy Incident"},
-		Params: map[string]string{"description": "dummy failed"},
-	}
-	err := esc.Escalate(req)
+	task := &Task{Title: "foobar", Params: map[string]string{"description": "foobar task"}}
+	err := esc.CreateTask(task)
 	assert.Nil(t, err)
-	assert.Equal(t, req.Rem.TaskId, "TASK-123")
+	assert.Equal(t, task.ID, "TASK-123")
 	assert.Equal(t, len(client.comments), 0)
 
-	req.Params["comment"] = "This comment"
-	err = esc.Escalate(req)
+	task.Params["comment"] = "This comment"
+	err = esc.UpdateTask(task)
 	assert.Equal(t, client.comments[0], "This comment")
 }
 
@@ -54,4 +56,5 @@ func TestLoadTasks(t *testing.T) {
 	task.ID = "TASK-444"
 	esc.LoadTask(task)
 	assert.Equal(t, task.Status, TaskStatusOpen)
+	assert.Equal(t, task.Title, "foobar")
 }

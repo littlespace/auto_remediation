@@ -30,7 +30,12 @@ class PortErrors:
             self.logger.error('failed to run command on device: {}'.format(ex))
             out["error"] = f'Failed to run junos command: {ex}'
             common.exit(out, False)
-        out["Interface output"] = output
+        try:
+            task_id = inp['data'].get('task_id')
+            if task_id:
+                common.add_issue_comment(self.opts, task_id, output)
+        except common.CommonException as ex:
+            self.logger.error('Failed to add task comment: {}'.format(ex))
 
         # implement auto drain for dc links only for now
         result = True
@@ -59,7 +64,7 @@ class PortErrors:
         try:
             job_id, result = common.run_awx_job(
                 url, token, self.awx_dc_drain_job_template, e, limit=device, timeout=120)
-            out['auto-drain'] = result
+            out['auto-drained'] = result
             out['awx_job_id'] = job_id
             result = result
         except Exception as ex:

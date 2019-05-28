@@ -110,11 +110,14 @@ func (m *MockNotifier) Send(rem *models.Remediation, msg string) error {
 }
 
 type MockEscalator struct {
-	escalated []string
 }
 
-func (m *MockEscalator) Escalate(req *escalate.EscalationRequest) error {
-	m.escalated = append(m.escalated, req.Rem.IncidentName)
+func (m *MockEscalator) CreateTask(t *escalate.Task) error {
+	t.ID = "TASK-99"
+	return nil
+}
+
+func (m *MockEscalator) UpdateTask(task *escalate.Task) error {
 	return nil
 }
 
@@ -269,10 +272,10 @@ func TestIncidentEscalate(t *testing.T) {
 	}
 	rem := r.processIncident(inc)
 	assert.Equal(t, rem.Status, models.Status_REMEDIATION_FAILED)
-	assert.Contains(t, mockEsc.escalated, inc.Name)
+	assert.Equal(t, rem.TaskId, "TASK-99")
 
 	inc.Name = "Test3"
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Status, models.Status_REMEDIATION_SUCCESS)
-	assert.NotContains(t, mockEsc.escalated, inc.Name)
+	assert.Equal(t, rem.TaskId, "")
 }

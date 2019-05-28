@@ -23,6 +23,7 @@ type Command struct {
 	Command string
 	Args    []string      `json:",omitempty"`
 	Timeout time.Duration `json:",omitempty"`
+	Env     []string      `json:",omitempty"`
 }
 
 type CmdResult struct {
@@ -70,6 +71,9 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 			// start the command in its own pg
 			command.SysProcAttr = &syscall.SysProcAttr{
 				Setpgid: true,
+			}
+			if len(cmd.Env) > 0 {
+				command.Env = cmd.Env
 			}
 			stdin, err := command.StdinPipe()
 			if err != nil {

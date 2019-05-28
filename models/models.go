@@ -297,3 +297,17 @@ type Command struct {
 	Logs          string
 	Results       string
 }
+
+func (c Command) String() string {
+	return fmt.Sprintf("%s Results: \n%s\n\n", c.Command, c.Results)
+}
+
+type Commands []*Command
+
+func (c Commands) String() string {
+	str := ""
+	for _, cmd := range c {
+		str += cmd.String()
+	}
+	return str
+}

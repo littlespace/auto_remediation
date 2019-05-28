@@ -22,7 +22,7 @@ type Remediator struct {
 	executor executor.Executioner
 	am       *am.AlertManager
 	notif    notify.Notifier
-	esc      escalate.Escalator
+	esc      escalate.TaskEscalator
 	recv     chan executor.Incident
 	exe      map[int64]chan struct{}
 	sync.Mutex
@@ -112,33 +112,39 @@ func (r *Remediator) notify(rem *models.Remediation, msg string) {
 	}
 }
 
-func (r *Remediator) escalate(rem *models.Remediation, inc executor.Incident, rule Rule, exeResults []*models.Command) {
+func (r *Remediator) newTask(inc *executor.Incident, rule Rule) *escalate.Task {
+	t := &escalate.Task{}
+	t.Title = fmt.Sprintf("Incident: %d:%s", inc.Id, inc.Name)
+	t.Params = map[string]string{"project": rule.JiraProject}
 	if r.esc == nil || rule.DontEscalate {
+		return t
+	}
+	if err := r.esc.CreateTask(t); err != nil {
+		glog.Errorf("Failed to open task: %v", err)
+	}
+	return t
+}
+
+func (r *Remediator) updateTask(task *escalate.Task, inc executor.Incident, exeResults models.Commands, new bool) {
+	if r.esc == nil || task.ID == "" {
 		return
 	}
-	params := map[string]string{"project": rule.JiraProject, "description": "", "comment": ""}
+	content := ""
 	if inc.Type == "CLEARED" {
-		params["comment"] = "This incident has now CLEARED"
+		content += "This incident has now CLEARED"
 	}
-	if rule.JiraProject == "" {
-		params["project"] = r.Config.Config.JiraProject
+	content += "\n" + exeResults.String()
+	if new {
+		task.Params = map[string]string{"description": content}
+	} else {
+		task.Params = map[string]string{"comment": content}
 	}
-	for _, exeRes := range exeResults {
-		params["description"] += fmt.Sprintf("%s Output: \n%s\n\n", exeRes.Command, exeRes.Results)
-	}
-	if params["description"] != "" {
-		params["comment"] += "\n" + params["description"]
-	}
-	req := &escalate.EscalationRequest{Rem: rem, Inc: inc, Params: params}
-	if err := r.esc.Escalate(req); err != nil {
-		glog.Errorf("Failed to escalate rem %d / inc %d : %v", rem.Id, inc.Id, err)
-	}
-	if err := r.Db.UpdateRecord(rem); err != nil {
-		glog.Errorf("Failed to update rem in db: %v", err)
+	if err := r.esc.UpdateTask(task); err != nil {
+		glog.Errorf("Failed to update task %s: %v", task.ID, err)
 	}
 }
 
-func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []executor.Command) ([]*models.Command, bool) {
+func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []executor.Command) (models.Commands, bool) {
 	glog.V(4).Infof("Running %s for remediation %d, incident %d", itype, rem.Id, rem.IncidentId)
 	e := make(chan struct{})
 	defer func() {
@@ -151,7 +157,7 @@ func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []execu
 	r.exe[rem.Id] = e
 	r.Unlock()
 	results := r.executor.Execute(context.Background(), cmds, len(cmds))
-	var ret []*models.Command
+	var ret models.Commands
 	for cmd, result := range results {
 		glog.V(4).Infof("%s Logs:\n %v", cmd.Name, result.Stderr)
 		glog.V(4).Infof("%s output:\n %v", cmd.Name, result.Stdout)
@@ -280,6 +286,7 @@ func (r *Remediator) checkExisting(incident executor.Incident, rule Rule) (*mode
 }
 
 func (r *Remediator) processActive(incident executor.Incident, rule Rule) *models.Remediation {
+	// check if an existing remediation has taken place for the incident
 	rem, done := r.checkExisting(incident, rule)
 	if done {
 		r.am.PostAck(incident.Id)
@@ -288,6 +295,7 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 	if rem == nil {
 		rem = models.NewRemediation(incident)
 	}
+	// make sure the incident stays active for the UpCheckDuration
 	config := r.Config.Config
 	isActive := r.am.AssertStatus("ACTIVE", incident.Id, config.AlertCheckInterval, rule.UpCheckDuration)
 	if !isActive {
@@ -295,6 +303,7 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 		return nil
 	}
 	glog.V(2).Infof("Incident %s is active, proceeding with remediation", incident.Name)
+	// create new remedation in DB if none exists
 	if rem.Id == 0 {
 		newId, err := r.Db.NewRecord(rem)
 		if err != nil {
@@ -303,14 +312,28 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 		glog.Infof("Created new remediation %d for incident %d", newId, incident.Id)
 		rem.Id = newId
 	}
+	// if an existing failed remediation/task exists, try another attempt. Else, create a new task
 	rem.Attempts += 1
+	task := &escalate.Task{}
+	if rem.TaskId == "" {
+		task = r.newTask(&incident, rule)
+	} else {
+		task.ID = rem.TaskId
+	}
+	incident.Data["task_id"] = task.ID
+	defer func() {
+		rem.TaskId = task.ID
+		if err := r.Db.UpdateRecord(rem); err != nil {
+			glog.Errorf("Failed to update rem in db: %v", err)
+		}
+	}()
 	// run pre-audits
 	cmds := getCmds(incident, rule.Audits)
 	exeResults, passed := r.execute(rem, "audit", cmds)
 	if !passed {
 		glog.Errorf("Audit run failed, not running remediations")
 		r.notify(rem, "Audit run failed, not running remediations")
-		r.escalate(rem, incident, rule, exeResults)
+		r.updateTask(task, incident, exeResults, rem.TaskId == "")
 		return rem
 	}
 	// run remediations
@@ -324,7 +347,7 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 		r.notify(rem, "Remediation Successful")
 	}
 	r.am.PostAck(incident.Id)
-	r.escalate(rem, incident, rule, exeResults)
+	r.updateTask(task, incident, exeResults, rem.TaskId == "")
 	return rem
 }
 
@@ -336,10 +359,13 @@ func (r *Remediator) processCleared(incident executor.Incident, rule Rule) *mode
 		return nil
 	}
 	var (
-		exeResults []*models.Command
+		exeResults models.Commands
 		passed     bool
 	)
-	defer r.escalate(rem, incident, rule, exeResults)
+	task := &escalate.Task{ID: rem.TaskId}
+	defer func() {
+		r.updateTask(task, incident, exeResults, false)
+	}()
 	if len(rule.OnClear) == 0 {
 		glog.V(2).Infof("Nothing to do for incident %d clear", incident.Id)
 		return nil

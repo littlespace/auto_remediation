@@ -15,6 +15,8 @@ class DummyRemediation:
             inp['name'], inp['id']))
         t = time.time()
         data = inp['data']
+        self.logger.info('Got incident task: {}'.format(
+            data.get('task_id', 'None')))
         if inp['is_aggregate']:
             components = data.get('components', [])
             self.logger.info(

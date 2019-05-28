@@ -31,9 +31,9 @@ func TestExecution(t *testing.T) {
 	runnerCmd = os.Args[0]
 	exe := &Executor{}
 	cmd := Command{
-		Input: Incident{Name: "pass"},
+		Input: &Incident{Name: "pass"},
 		Name:  "Test passing",
-		Args:  []string{"testme"},
+		Env:   []string{"testme=1"},
 	}
 	result := exe.Execute(context.Background(), []Command{cmd}, 1)
 	for _, res := range result {
@@ -43,9 +43,9 @@ func TestExecution(t *testing.T) {
 		assert.Equal(t, res.Stdout, `{"result": "pass", "message": "good"}`)
 	}
 	cmd = Command{
-		Input: Incident{Name: "fail"},
+		Input: &Incident{Name: "fail"},
 		Name:  "Test failing",
-		Args:  []string{"testme"},
+		Env:   []string{"testme=1"},
 	}
 	result = exe.Execute(context.Background(), []Command{cmd}, 1)
 	for _, res := range result {
@@ -57,10 +57,9 @@ func TestExecution(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	switch len(os.Args) {
-	case 1:
-		os.Exit(m.Run())
-	default:
+	if os.Getenv("testme") == "1" {
 		execute()
+		return
 	}
+	os.Exit(m.Run())
 }

@@ -29,6 +29,11 @@ class HighCpu:
             self.logger.error('failed to run command on device: {}'.format(ex))
             out["error"] = str(ex)
             common.exit(out, False)
-        out['CPU Output'] = output
+        try:
+            task_id = inp['data'].get('task_id')
+            if task_id:
+                common.add_issue_comment(self.opts, task_id, output)
+        except common.CommonException as ex:
+            self.logger.error('Failed to add task comment: {}'.format(ex))
 
         common.exit(out, True)

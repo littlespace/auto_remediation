@@ -5,8 +5,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mayuresh82/auto_remediation/executor"
-	"github.com/mayuresh82/auto_remediation/models"
 	jira "gopkg.in/andygrunwald/go-jira.v1"
 )
 
@@ -21,9 +19,10 @@ const (
 )
 
 type Task struct {
-	ID, Description string
-	Status          TaskStatus
-	Created         time.Time
+	ID, Title string
+	Status    TaskStatus
+	Created   time.Time
+	Params    map[string]string
 }
 
 type Tasks []*Task
@@ -38,16 +37,9 @@ func (t Tasks) Latest() *Task {
 	return t[0]
 }
 
-type EscalationRequest struct {
-	Rem    *models.Remediation
-	Inc    executor.Incident
-	Params map[string]string
-}
-
-type Escalator interface {
-	// Escalate escalates by performing some action on a task
-	Escalate(req *EscalationRequest) error
-	// LoadTask fills in relevant task details
+type TaskEscalator interface {
+	CreateTask(task *Task) error
+	UpdateTask(task *Task) error
 	LoadTask(task *Task) error
 }
 
@@ -55,6 +47,7 @@ type jiraClienter interface {
 	AddComment(string, *jira.Comment) error
 	Create(*jira.Issue) (*jira.Issue, error)
 	GetIssue(string) (*jira.Issue, error)
+	UpdateIssue(string, map[string]interface{}) error
 }
 
 type jiraClient struct {
@@ -77,6 +70,11 @@ func (c *jiraClient) Create(i *jira.Issue) (*jira.Issue, error) {
 func (c *jiraClient) GetIssue(issueKey string) (*jira.Issue, error) {
 	issue, _, err := c.Client.Issue.Get(issueKey, nil)
 	return issue, err
+}
+
+func (c *jiraClient) UpdateIssue(issueKey string, data map[string]interface{}) error {
+	_, err := c.Client.Issue.UpdateIssue(issueKey, data)
+	return err
 }
 
 var openJiraStates = []string{"Open", "To Do"}
@@ -111,34 +109,58 @@ func NewJiraEscalator(url, user, pass, project string) (*JiraEscalator, error) {
 	}, nil
 }
 
-func (j *JiraEscalator) Escalate(req *EscalationRequest) error {
-	if req.Rem.TaskId != "" {
-		return j.client.AddComment(req.Rem.TaskId, &jira.Comment{Body: req.Params["comment"]})
+func (j *JiraEscalator) taskToIssue(task *Task) (*jira.Issue, error) {
+	if task.Title == "" {
+		return nil, fmt.Errorf("Task Title Required for JIRA task")
 	}
-	summary := fmt.Sprintf("Incident: %d:%s", req.Inc.Id, req.Inc.Name)
-	project := req.Params["project"]
+	project := task.Params["project"]
 	if project == "" {
 		project = j.project
 	}
-	i := jira.Issue{
+	i := &jira.Issue{
 		Fields: &jira.IssueFields{
-			Description: req.Params["description"],
 			Type: jira.IssueType{
 				Name: "Task",
 			},
 			Project: jira.Project{
 				Key: project,
 			},
-			Summary: summary,
+			Summary: task.Title,
 			Labels:  []string{label},
 		},
 	}
-	issue, err := j.client.Create(&i)
+	if desc, ok := task.Params["description"]; ok {
+		i.Fields.Description = desc
+	}
+	return i, nil
+}
+
+func (j *JiraEscalator) CreateTask(task *Task) error {
+	i, err := j.taskToIssue(task)
 	if err != nil {
 		return err
 	}
-	req.Rem.TaskId = issue.Key
-	return nil
+	issue, err := j.client.Create(i)
+	if err != nil {
+		return err
+	}
+	task.ID = issue.Key
+	return j.LoadTask(task)
+}
+
+func (j *JiraEscalator) UpdateTask(task *Task) error {
+	if task.ID == "" {
+		return fmt.Errorf("UpdateTask requires a task ID")
+	}
+	if comment, ok := task.Params["comment"]; ok {
+		return j.client.AddComment(task.ID, &jira.Comment{Body: comment})
+	}
+	data := make(map[string]interface{})
+	for k, v := range task.Params {
+		data[k] = v
+	}
+	d := map[string]interface{}{"fields": data}
+	return j.client.UpdateIssue(task.ID, d)
 }
 
 func (j *JiraEscalator) LoadTask(task *Task) error {
@@ -149,6 +171,7 @@ func (j *JiraEscalator) LoadTask(task *Task) error {
 	if err != nil {
 		return err
 	}
+	task.Title = issue.Fields.Summary
 	status := TaskStatusOther
 	if in(issue.Fields.Status.Name, openJiraStates) {
 		status = TaskStatusOpen

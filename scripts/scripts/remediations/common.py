@@ -27,22 +27,16 @@ def create_jira_issue(url, auth, project, issue_type, summary, description):
     return issue
 
 
-def add_issue_comment(url, auth, project, issue_type, summary, comment):
+def add_issue_comment(opts, issue_key, comment):
+    url = opts.get('jira_url')
+    if not url:
+        raise CommonException('Invalid URL specified')
+    auth = (opts.get('jira_username'), opts.get('jira_password'))
     j = JIRA(url, auth=auth)
-    issue_filter = "project={} and issueType='{}' and status != closed and summary~{}".format(
-        project, issue_type, summary
-    )
     try:
-        issues = j.search_issues(issue_filter)
-    except JIRAError as ex:
-        raise CommonException('Failed to search JIRA Issue: {}'.format(ex))
-    if len(issues) == 0:
-        return
-    try:
-        j.add_comment(issues[0].key, comment)
+        j.add_comment(issue_key, comment)
     except JIRAError as ex:
         raise CommonException('Failed to add comment: {}'.format(ex))
-    return issues[0]
 
 
 def run_junos_command(device, command, opts, port=22):

@@ -44,6 +44,7 @@ class Fibercut:
             common.exit(out, False)
         tpl['provider'] = list(providers)[0]
         tpl['cids'] = list(cids)
+        tpl['task_id'] = data.get('task_id', 'UNKNOWN')
         nb_url = self.opts.get('netbox_url') + \
             self.NB_PROV_URL + f"?slug={tpl['provider']}"
         try:
@@ -60,9 +61,16 @@ class Fibercut:
                               'email_pass'),
                           args.email_from, contacts)
         except Exception as ex:
+            self.logger.error(f'Failed to send email: {ex}')
             out['error'] = f'Failed to send email: {ex}'
             out['passed'] = False
             common.exit(out, False)
+        try:
+            if data.get('task_id'):
+                comment = f'Email sent to provider: \n {body}'
+                common.add_issue_comment(self.opts, data['task_id'], comment)
+        except common.CommonException as ex:
+            self.logger.error('Failed to add task comment: {}'.format(ex))
 
         out['passed'] = True
         common.exit(out, True)
@@ -90,12 +98,16 @@ class Fibercut:
             Dear {{provider}} Noc,
             
             The following circuits have been detected down by Roblox:
+
             Start Time: {{start_time}}
+            Roblox Task ID: {{task_id}}
+
             {% for cid in cids %}
             Circuit ID: {{cid}}
             {% endfor %}
             
             Please investigate and reply back with your case number asap.
+
             - Roblox NOC
         '''
 
