@@ -80,7 +80,7 @@ func (c *MockClient) Do(req *http.Request) (*http.Response, error) {
 		body = []byte(`[{"status": "CLEARED"}]`)
 	}
 	if strings.Contains(req.URL.String(), "agg_id") {
-		body = []byte(`[{"alert": 40}, {"alert": 50}]`)
+		body = []byte(`[{"alert": 40, "device": "d2", "entity": "e2"}, {"alert": 50, "device": "d3", "entity": "e3"}]`)
 	}
 	return &http.Response{StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewBuffer(body))}, nil
 }
@@ -229,6 +229,7 @@ func TestIncidentProcessing(t *testing.T) {
 	inc.Name = "Test1"
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(1))
+	assert.ElementsMatch(t, rem.Entities, []string{"d1:e1"})
 	assert.Equal(t, rem.Status, models.Status_REMEDIATION_SUCCESS)
 
 	// test aggregate incident
@@ -236,6 +237,7 @@ func TestIncidentProcessing(t *testing.T) {
 	inc.Id = 30
 	rem = r.processIncident(inc)
 	assert.Equal(t, rem.Id, int64(1))
+	assert.ElementsMatch(t, rem.Entities, []string{"d2:e2", "d3:e3"})
 	assert.Contains(t, inc.Data, "components")
 	components := inc.Data["components"].([]map[string]interface{})
 	assert.Equal(t, len(components), 2)

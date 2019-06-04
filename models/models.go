@@ -270,14 +270,22 @@ func (r *Remediation) End(status Status, db Dbase) error {
 
 func NewRemediation(incident executor.Incident) *Remediation {
 	var entities []string
-	if ents, ok := incident.Data["entities"]; ok {
-		for _, ent := range ents.([]interface{}) {
-			entities = append(entities, ent.(string))
+	if incident.IsAggregate {
+		if components, ok := incident.Data["components"]; ok {
+			for _, alertData := range components.([]map[string]interface{}) {
+				if d, ok := alertData["device"]; ok {
+					entities = append(entities, fmt.Sprintf("%v:%v", d, alertData["entity"]))
+				} else {
+					entities = append(entities, alertData["entity"].(string))
+				}
+			}
 		}
-	} else if d, ok := incident.Data["device"]; ok {
-		entities = append(entities, fmt.Sprintf("%v:%v", d, incident.Data["entity"]))
 	} else {
-		entities = append(entities, incident.Data["entity"].(string))
+		if d, ok := incident.Data["device"]; ok {
+			entities = append(entities, fmt.Sprintf("%v:%v", d, incident.Data["entity"]))
+		} else {
+			entities = append(entities, incident.Data["entity"].(string))
+		}
 	}
 	return &Remediation{
 		Status:       Status_ACTIVE,
