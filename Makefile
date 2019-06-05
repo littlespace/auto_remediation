@@ -12,13 +12,13 @@ all:
 		$(MAKE) auto_remediation
 
 auto_remediation:
-		go build -ldflags "$(LDFLAGS)" ./cmd/auto_remediation
+		go build -mod=vendor -ldflags "$(LDFLAGS)" ./cmd/auto_remediation
 
 debug:
-		go build -race ./cmd/auto_remediation
+		go build -mod=vendor -race ./cmd/auto_remediation
 
 test:
-		go test -v -race -short -failfast ./...
+		go test -v -mod=vendor -race -short -failfast ./...
 
 linux:
-		GOOS=linux GOARCH=amd64 go build -o auto_remediation_linux ./cmd/auto_remediation
+		GOOS=linux GOARCH=amd64 go build -mod=vendor -o auto_remediation_linux ./cmd/auto_remediation
