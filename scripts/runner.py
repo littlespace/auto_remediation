@@ -5,7 +5,10 @@ import sys
 import json
 import yaml
 import argparse
-import scripts
+import importlib
+import os
+import warnings
+warnings.filterwarnings('ignore')
 
 
 def setup_logging(name, loglvl):
@@ -23,6 +26,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug', dest='debug',
                         action='store_true', help='Debug logs')
+    parser.add_argument('--scripts_path', dest='scripts_path',
+                        help='Full path to location of scripts')
     parser.add_argument('--script_name', dest='script_name',
                         help='Script name to run')
     parser.add_argument('--common_opts_file', dest='common_opts_file', default=None,
@@ -40,8 +45,17 @@ def main(args):
     common_opts = {}
     if main_args.common_opts_file:
         with open(main_args.common_opts_file, 'r') as f:
-            common_opts = yaml.load(f)
-    scriptClass = scripts.getScript(main_args.script_name)
+            common_opts = yaml.full_load(f)
+    pkg_path, pkg_name = os.path.split(main_args.scripts_path)
+    sys.path.append(pkg_path)
+    scriptClass = None
+    try:
+        pkg = importlib.import_module(pkg_name)
+        scriptClass = pkg.getScript(main_args.script_name)
+    except Exception as ex:
+        logger.error(ex)
+        print(json.dumps({'passed': False, 'message': 'Failed to import scripts pkg'}))
+        sys.exit(1)
     if not scriptClass:
         print(json.dumps({'passed': False, 'message': 'Script not found'}))
         sys.exit(1)

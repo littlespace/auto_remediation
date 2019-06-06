@@ -1,0 +1,4 @@
+requests
+jira
+junos-eznc
+pyaml

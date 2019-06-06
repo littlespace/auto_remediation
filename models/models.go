@@ -235,7 +235,7 @@ var StatusMap = map[string]Status{
 	"error":               Status_ERROR,
 }
 
-var StatusFailed = []Status{Status_AUDIT_FAILED, Status_REMEDIATION_FAILED}
+var StatusFailed = []Status{Status_AUDIT_FAILED, Status_REMEDIATION_FAILED, Status_ERROR}
 
 func (s Status) IsFailed() bool {
 	for _, status := range StatusFailed {

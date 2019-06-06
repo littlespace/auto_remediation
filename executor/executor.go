@@ -39,12 +39,12 @@ type Executioner interface {
 }
 
 type Executor struct {
-	cmdsPath   string
-	commonOpts string
+	scriptsPath string
+	commonOpts  string
 }
 
-func NewExecutor(cmdsPath, commonOpts string) Executioner {
-	return &Executor{cmdsPath: cmdsPath, commonOpts: commonOpts}
+func NewExecutor(scriptsPath, commonOpts string) Executioner {
+	return &Executor{scriptsPath: scriptsPath, commonOpts: commonOpts}
 }
 
 func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int) map[*Command]*CmdResult {
@@ -64,8 +64,8 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 			}
 			ctx, cancel := context.WithTimeout(ctx, cmd.Timeout)
 			defer cancel()
-			fullPath := filepath.Join(e.cmdsPath, runnerCmd)
-			args := []string{"--script_name", cmd.Command, "--common_opts_file", e.commonOpts}
+			fullPath := filepath.Join(e.scriptsPath, runnerCmd)
+			args := []string{"--scripts_path", e.scriptsPath, "--script_name", cmd.Command, "--common_opts_file", e.commonOpts}
 			args = append(args, cmd.Args...)
 			command := exec.CommandContext(ctx, fullPath, args...)
 			// start the command in its own pg
