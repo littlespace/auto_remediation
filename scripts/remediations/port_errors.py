@@ -66,7 +66,11 @@ class PortErrors:
                 url, token, self.awx_dc_drain_job_template, e, limit=device, timeout=120)
             out['auto-drained'] = result
             out['awx_job_id'] = job_id
-            result = result
+            if result:
+                out['message'] = (
+                    'This interface has been auto-drained. Use AWX job template {} to undrain'.format(
+                    self.awx_dc_drain_job_template)
+                )
         except Exception as ex:
             self.logger.error('Failed to run awx job: {}'.format(ex))
             out['error'] = f'Failed to auto-drain: {ex}'

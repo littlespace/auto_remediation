@@ -72,6 +72,9 @@ func (a *AlertManager) GetStatus(id int64) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to query alert %d: %v", id, err)
 	}
+	if len(alerts) == 0 {
+		return "", fmt.Errorf("No alerts returned for ID %d", id)
+	}
 	return alerts[0]["status"].(string), nil
 }
 
