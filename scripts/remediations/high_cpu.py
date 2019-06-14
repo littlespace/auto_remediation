@@ -23,10 +23,12 @@ class HighCpu:
             'Start Time': f"{inp['start_time']}",
         }
         try:
+            ip = common.nb_device_ip(self.opts.get('netbox_url'), device)
             output = common.run_junos_command(
                 device, self.junos_cmd, self.opts)
         except common.CommonException as ex:
-            self.logger.error('failed to run command on device: {}'.format(ex))
+            self.logger.error(
+                'failed to run command on device: {} / {} : {}'.format(device, ip, ex))
             out["error"] = str(ex)
             common.exit(out, False)
         try:

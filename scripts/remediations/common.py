@@ -110,3 +110,13 @@ def exit(out, passed):
     if passed:
         sys.exit(0)
     sys.exit(1)
+
+
+def nb_device_ip(nb_url, device):
+    url = nb_url + f'/api/dcim/devices/?name={device}'
+    resp = requests.get(url)
+    resp.raise_for_status()
+    results = resp.json()
+    if len(results['results']) == 0:
+        raise CommonException(f'Failed to get nb result for {device}')
+    return results['results'][0]['primary_ip']['address'].split('/')[0]
