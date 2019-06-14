@@ -25,9 +25,11 @@ class PortErrors:
         }
         cmd = self.junos_cmd.format(intf=inp['data']['entity'])
         try:
-            output = common.run_junos_command(device, cmd, self.opts)
+            ip = common.nb_device_ip(self.opts.get('netbox_url'), device)
+            output = common.run_junos_command(ip, cmd, self.opts)
         except common.CommonException as ex:
-            self.logger.error('failed to run command on device: {}'.format(ex))
+            self.logger.error(
+                'failed to run command on device: {} / {}: {}'.format(device, ip, ex))
             out["error"] = f'Failed to run junos command: {ex}'
             common.exit(out, False)
         try:
@@ -69,7 +71,7 @@ class PortErrors:
             if result:
                 out['message'] = (
                     'This interface has been auto-drained. Use AWX job template {} to undrain'.format(
-                    self.awx_dc_drain_job_template)
+                        self.awx_dc_drain_job_template)
                 )
         except Exception as ex:
             self.logger.error('Failed to run awx job: {}'.format(ex))
