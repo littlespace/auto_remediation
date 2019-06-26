@@ -10,7 +10,7 @@ class DcDrainAudit:
     '''
 
     supported_roles = {
-        'pod-switch': ['rack-switch', 'cluster-switch'],
+        'pod-switch': ['rack-switch', 'cluster-switch', 'services-switch'],
         'rack-switch': ['pod-switch'],
         'cluster-switch': ['pod-switch', 'border-switch'],
         'border-switch': ['cluster-switch', 'border-router'],
@@ -86,7 +86,7 @@ class DcDrainAudit:
         iface = nb_data['interfaces'][interface]
         if (
             nb_data['role'] == 'rack-switch' and iface['peer_role'] == 'pod-switch' or
-            nb_data['role'] == 'pod-switch' and iface['peer_role'] == 'cluster-switch' or
+            nb_data['role'] == 'pod-switch' and iface['peer_role'] in ['cluster-switch', 'services-switch'] or
             nb_data['role'] == 'cluster-switch' and iface['peer_role'] == 'border-switch' or
             nb_data['role'] == 'border-switch' and iface['peer_role'] == 'border-router'
         ):
@@ -105,3 +105,4 @@ class DcDrainAudit:
             except Exception as ex:
                 self.logger.exception(ex)
                 return False, f'Hit exeption running audit: {ex}'
+        return False, 'Unexpected error - unsupported role'

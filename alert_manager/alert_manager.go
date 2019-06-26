@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -55,15 +56,19 @@ func (a *AlertManager) GetAlerts(url string) ([]map[string]interface{}, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	var data []interface{}
+	if resp.StatusCode != http.StatusOK {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			body = []byte{}
+		}
+		return nil, fmt.Errorf("Failed to query alert, Got %v: %v", resp.StatusCode, string(body))
+	}
+	var data []map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("Unable to decode json body: %v", err)
 	}
-	var ret []map[string]interface{}
-	for _, d := range data {
-		ret = append(ret, d.(map[string]interface{}))
-	}
-	return ret, nil
+	glog.V(4).Infof("Recvd Alert data: %+v", data)
+	return data, nil
 }
 
 func (a *AlertManager) GetStatus(id int64) (string, error) {

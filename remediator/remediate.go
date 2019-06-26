@@ -329,16 +329,16 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 	}()
 	// run pre-audits
 	cmds := getCmds(incident, rule.Audits)
-	exeResults, passed := r.execute(rem, "audit", cmds)
+	auditExeResults, passed := r.execute(rem, "audit", cmds)
 	if !passed {
 		glog.Errorf("Audit run failed, not running remediations")
 		r.notify(rem, "Audit run failed, not running remediations")
-		r.updateTask(task, incident, exeResults, rem.TaskId == "")
+		r.updateTask(task, incident, auditExeResults, rem.TaskId == "")
 		return rem
 	}
 	// run remediations
 	cmds = getCmds(incident, rule.Remediations)
-	exeResults, passed = r.execute(rem, "remediation", cmds)
+	remExeResults, passed := r.execute(rem, "remediation", cmds)
 	if !passed {
 		glog.Errorf("Remediation run failed")
 		r.notify(rem, "Remediation run failed")
@@ -347,7 +347,7 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 		r.notify(rem, "Remediation Successful")
 	}
 	r.am.PostAck(incident.Id)
-	r.updateTask(task, incident, exeResults, rem.TaskId == "")
+	r.updateTask(task, incident, append(auditExeResults, remExeResults...), rem.TaskId == "")
 	return rem
 }
 
