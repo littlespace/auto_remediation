@@ -41,10 +41,10 @@ class DcDrainAudit:
             self._pre_checks(iface, out)
             if d['role'] not in self.supported_roles:
                 out['message'] = f"Unsupported switch role: {d['role']}"
-                common.exit(out, False)
+                common.exit(out, True)
             if iface['peer_role'] not in self.supported_roles[d['role']]:
                 out['message'] = f"Unsupported peer-switch role: {iface['peer_role']}"
-                common.exit(out, False)
+                common.exit(out, True)
             passed, msg = self._audit(
                 interface, d, threshold=self.args.threshold)
             self.logger.info(
@@ -59,11 +59,11 @@ class DcDrainAudit:
     def _pre_checks(self, iface, out):
         if 'drained' in iface['tags']:
             out['message'] = 'Link is already drained'
-            common.exit(out, False)
+            common.exit(out, True)
         # dont drain if part of a lag
         if iface['lag'] is not None:
             out['message'] = 'Link is part of a lag'
-            common.exit(out, False)
+            common.exit(out, True)
 
     def _check_threshold(self, interface, nb_data, threshold=0.5):
         # no more than threshold% uplinks drained at any time based on drained tags
@@ -75,7 +75,7 @@ class DcDrainAudit:
             i['name'] != iface['name']
         ]
         drained_same_role_links = [
-            i for i in same_role_links if 'drained' in i['tags']]
+            i for i in same_role_links if 'drained' in i['tags'] or i['peer_status'].lower() != 'active']
         if len(drained_same_role_links) / len(same_role_links) > float(threshold):
             msg = f"Found more than {float(threshold) * 100}% drained capacity on {nb_data['name']} to {iface['peer_role']}"
             self.logger.info(msg)
