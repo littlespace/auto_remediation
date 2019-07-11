@@ -35,12 +35,15 @@ type AlertManager struct {
 	sync.Mutex
 }
 
-func NewAlertManager(addr, user, pass, owner, team string) *AlertManager {
-	a := &AlertManager{addr: addr, team: team, owner: owner}
+func NewAlertManager(addr, user, pass, owner, team, token string) *AlertManager {
+	a := &AlertManager{addr: addr, team: team, owner: owner, token: token}
 	if a.owner == "" {
 		a.owner = defaultOwner
 	}
 	a.Client = &Client{&http.Client{Timeout: 5 * time.Second}}
+	if a.token != "" {
+		return a
+	}
 	if err := a.getToken(user, pass); err != nil {
 		// TODO add retry logic here
 		glog.Exitf("failed to talk to Alert Manager: %v", err)
@@ -86,6 +89,7 @@ func (a *AlertManager) GetStatus(id int64) (string, error) {
 func (a *AlertManager) AssertStatus(desiredStatus string, id int64, checkInterval, checkTime time.Duration) bool {
 	now := time.Now()
 	for {
+		time.Sleep(checkInterval)
 		status, err := a.GetStatus(id)
 		if err != nil {
 			glog.Errorf("Failed to check alert %d status: %v", id, err)
@@ -97,7 +101,6 @@ func (a *AlertManager) AssertStatus(desiredStatus string, id int64, checkInterva
 		if time.Now().Sub(now) >= checkTime {
 			break
 		}
-		time.Sleep(checkInterval)
 	}
 	return true
 }
@@ -124,6 +127,7 @@ func (a *AlertManager) WaitOnStatus(desiredStatus string, id int64, checkInterva
 }
 
 func (a *AlertManager) getToken(user, pass string) error {
+	glog.V(4).Infof("Getting Alert manager token")
 	url := a.addr + "/api/auth"
 	data := struct {
 		Username string
@@ -157,6 +161,10 @@ func (a *AlertManager) getToken(user, pass string) error {
 }
 
 func (a *AlertManager) refreshToken(expiresAt int64) {
+	if expiresAt <= 0 {
+		return
+	}
+	glog.V(4).Infof("Refreshing Alert manager token")
 	// AM expectes a refresh within 30 seconds of expiry
 	expiresAt = expiresAt - 20
 	refresh := time.Unix(expiresAt, 0).Sub(time.Now())

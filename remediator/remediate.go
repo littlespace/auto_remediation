@@ -41,7 +41,7 @@ func NewRemediator(configFile string) (*Remediator, error) {
 	recv := make(chan executor.Incident)
 	q.Register(recv)
 	db := models.NewDB(config.DbAddr, config.DbUsername, config.DbPassword, config.DbName, config.DbTimeout)
-	amgr := am.NewAlertManager(config.AlertManagerAddr, config.AmUsername, config.AmPassword, config.AmOwner, config.AmTeam)
+	amgr := am.NewAlertManager(config.AlertManagerAddr, config.AmUsername, config.AmPassword, config.AmOwner, config.AmTeam, config.AmToken)
 	r := &Remediator{
 		Config:   c,
 		Db:       db,

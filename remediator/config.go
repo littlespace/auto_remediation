@@ -18,6 +18,7 @@ type Config struct {
 	AmqpPass           string        `yaml:"amqp_pass"`
 	AlertManagerAddr   string        `yaml:"alert_manager_addr"`
 	AlertCheckInterval time.Duration `yaml:"alert_check_interval"`
+	AmToken            string        `yaml:"am_token"`
 	AmUsername         string        `yaml:"am_username"`
 	AmPassword         string        `yaml:"am_password"`
 	AmOwner            string        `yaml:"am_owner"`
