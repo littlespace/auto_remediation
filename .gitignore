@@ -1,5 +1,5 @@
 *.swp
 bin/
-./auto_remediation
+auto_remediation
 *.pyc
 __pycache__
