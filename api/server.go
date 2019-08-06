@@ -27,6 +27,7 @@ func (s *Server) Start(ctx context.Context) {
 	router.HandleFunc("/api/{category}", s.Get).Methods("GET")
 	//router.HandleFunc("/api/auth", s.AuthAlertManager).Methods("POST")
 	//router.HandleFunc("/api/commands/run", s.RunCommand).Methods("POST")
+	router.HandleFunc("/admin/{state}", s.SetState).Methods("POST")
 
 	// set up the router
 	srv := &http.Server{
@@ -65,4 +66,32 @@ func (s *Server) Get(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(items)
+}
+
+func (s *Server) SetState(w http.ResponseWriter, req *http.Request) {
+	user, pass, ok := req.BasicAuth()
+	if !ok {
+		http.Error(w, "Missing username/password", http.StatusBadRequest)
+		return
+	}
+	adminUser, adminPass := s.rem.Config.AdminCreds()
+	if user != adminUser && pass != adminPass {
+		http.Error(w, "Authentication Failed", http.StatusUnauthorized)
+		return
+	}
+	vars := mux.Vars(req)
+	var err error
+	switch vars["state"] {
+	case "enable":
+		err = s.rem.Enable()
+	case "disable":
+		err = s.rem.Disable()
+	default:
+		err = fmt.Errorf("Invalid request, choose either 'enable' or 'disable'")
+	}
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to disable: %v", err), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(w, "System is now %sd\n", vars["state"])
 }

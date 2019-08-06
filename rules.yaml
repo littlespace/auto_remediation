@@ -1,4 +1,7 @@
 config:
+  ## admin
+  admin_user: admin
+  admin_pass: foo
   ## amqp details
   amqp_qname: auto_remediations
   amqp_addr: http://amqp:5672

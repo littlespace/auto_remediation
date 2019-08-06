@@ -167,6 +167,10 @@ func TestIncidentProcessing(t *testing.T) {
 			"device":      "d1",
 		},
 	}
+	// system disabled
+	assert.Nil(t, r.processIncident(inc))
+
+	r.enabled = true
 	// test no rules
 	inc.Name = "Test6"
 	rem := r.processIncident(inc)
@@ -261,6 +265,7 @@ func TestIncidentEscalate(t *testing.T) {
 		esc:      mockEsc,
 		am:       &am.AlertManager{Client: &MockClient{}},
 		exe:      make(map[int64]chan struct{}),
+		enabled:  true,
 	}
 	inc := executor.Incident{
 		Name: "Test4",

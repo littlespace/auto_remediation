@@ -25,6 +25,7 @@ type Remediator struct {
 	esc      escalate.TaskEscalator
 	recv     chan executor.Incident
 	exe      map[int64]chan struct{}
+	enabled  bool
 	sync.Mutex
 }
 
@@ -50,6 +51,7 @@ func NewRemediator(configFile string) (*Remediator, error) {
 		am:       amgr,
 		recv:     recv,
 		exe:      make(map[int64]chan struct{}),
+		enabled:  true,
 	}
 	if config.SlackUrl != "" {
 		r.notif = &notify.SlackNotifier{Url: config.SlackUrl, Channel: config.SlackChannel, Mention: config.SlackMention}
@@ -76,6 +78,20 @@ func getCmds(incident executor.Incident, inCmds []executor.Command) []executor.C
 		})
 	}
 	return cmds
+}
+
+func (r *Remediator) Disable() error {
+	r.Lock()
+	defer r.Unlock()
+	r.enabled = false
+	return nil
+}
+
+func (r *Remediator) Enable() error {
+	r.Lock()
+	defer r.Unlock()
+	r.enabled = true
+	return nil
 }
 
 func (r *Remediator) Start(ctx context.Context) {
@@ -192,6 +208,13 @@ func (r *Remediator) execute(rem *models.Remediation, itype string, cmds []execu
 }
 
 func (r *Remediator) processIncident(incident executor.Incident) *models.Remediation {
+	r.Lock()
+	if !r.enabled {
+		glog.Errorf("System is Disabled, no remediations will be performed")
+		r.Unlock()
+		return nil
+	}
+	r.Unlock()
 	glog.V(2).Infof("Processing incident: %s:%d", incident.Name, incident.Id)
 	rule, ok := r.Config.RuleByName(incident.Name)
 	if !ok {

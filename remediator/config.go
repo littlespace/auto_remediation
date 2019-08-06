@@ -2,16 +2,19 @@ package remediator
 
 import (
 	"fmt"
-	"github.com/mayuresh82/auto_remediation/executor"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"path/filepath"
 	"time"
+
+	"github.com/mayuresh82/auto_remediation/executor"
+	"gopkg.in/yaml.v2"
 )
 
 const defaultRuleAttempts = 2
 
 type Config struct {
+	AdminUser          string        `yaml:"admin_user"`
+	AdminPass          string        `yaml:"admin_pass"`
 	AmqpQName          string        `yaml:"amqp_qname"`
 	AmqpAddr           string        `yaml:"amqp_addr"`
 	AmqpUser           string        `yaml:"amqp_user"`
@@ -81,4 +84,8 @@ func (c *ConfigHandler) RuleByName(name string) (Rule, bool) {
 		}
 	}
 	return Rule{}, false
+}
+
+func (c *ConfigHandler) AdminCreds() (string, string) {
+	return c.Config.AdminUser, c.Config.AdminPass
 }
