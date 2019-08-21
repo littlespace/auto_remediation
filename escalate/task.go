@@ -15,7 +15,6 @@ type TaskStatus int
 const (
 	TaskStatusOpen   TaskStatus = 1
 	TaskStatusClosed TaskStatus = 2
-	TaskStatusOther  TaskStatus = 3
 )
 
 type Task struct {
@@ -77,7 +76,6 @@ func (c *jiraClient) UpdateIssue(issueKey string, data map[string]interface{}) e
 	return err
 }
 
-var openJiraStates = []string{"Open", "To Do"}
 var closedJiraStates = []string{"Closed", "Done"}
 
 func in(elem string, list []string) bool {
@@ -172,10 +170,8 @@ func (j *JiraEscalator) LoadTask(task *Task) error {
 		return err
 	}
 	task.Title = issue.Fields.Summary
-	status := TaskStatusOther
-	if in(issue.Fields.Status.Name, openJiraStates) {
-		status = TaskStatusOpen
-	} else if in(issue.Fields.Status.Name, closedJiraStates) {
+	status := TaskStatusOpen
+	if in(issue.Fields.Status.Name, closedJiraStates) {
 		status = TaskStatusClosed
 	}
 	task.Status = status
