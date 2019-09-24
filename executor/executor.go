@@ -115,9 +115,9 @@ func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int)
 					if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 						res.RetCode = status.ExitStatus()
 					}
+				} else {
+					res.Error = err
 				}
-			} else {
-				res.Error = err
 			}
 			res.Runtime = time.Now().Sub(startTime)
 			ret[&cmd] = res

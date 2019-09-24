@@ -1,6 +1,7 @@
 import json
 import sys
 import smtplib
+import time
 import requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -18,7 +19,7 @@ class Fibercut:
         self.opts = opts
 
     def run(self, inp, args):
-        self.logger.info('Running remediation for: {}, Id: {}'.format(
+        self.logger.info('Running remediation Fibercut for: {}, Id: {}'.format(
             inp['name'], inp['id']))
 
         data = inp['data']
@@ -54,23 +55,32 @@ class Fibercut:
                 out['error'] = (
                     f"Failed to fetch contacts for {tpl['provider']} from netbox")
                 common.exit(out, False)
+        except Exception as ex:
+            self.fail(f'Failed to parse provider contacts: {ex}', out)
+
+        if args.no_email:
+            try:
+                comment = 'Not sending provder email - disabled by config'
+                common.add_issue_comment(self.opts, data['task_id'], comment)
+                out['passed'] = True
+                common.exit(out, True)
+            except Exception as ex:
+                self.fail(f'Failed to update task: {ex}', out)
+
+        try:
             t = Template(self.email_template())
             body = t.render(**tpl)
             self.sendmail(body, self.opts.get('email_server'),
                           self.opts.get('email_user'), self.opts.get(
                               'email_pass'),
                           args.email_from, contacts)
-        except Exception as ex:
-            self.logger.error(f'Failed to send email: {ex}')
-            out['error'] = f'Failed to send email: {ex}'
-            out['passed'] = False
-            common.exit(out, False)
-        try:
             if data.get('task_id'):
                 comment = f'Email sent to provider: \n {body}'
                 common.add_issue_comment(self.opts, data['task_id'], comment)
         except common.CommonException as ex:
             self.logger.error('Failed to add task comment: {}'.format(ex))
+        except Exception as ex:
+            self.fail(f'Failed to send email: {ex}', out)
 
         out['passed'] = True
         common.exit(out, True)
@@ -96,7 +106,7 @@ class Fibercut:
     def email_template():
         return '''
             Dear {{provider}} Noc,
-            
+
             The following circuits have been detected down by Roblox:
 
             Start Time: {{start_time}}
@@ -105,7 +115,7 @@ class Fibercut:
             {% for cid in cids %}
             Circuit ID: {{cid}}
             {% endfor %}
-            
+
             Please investigate and reply back with your case number asap.
 
             - Roblox NOC
@@ -127,3 +137,9 @@ class Fibercut:
         self.logger.info(f"Sending email to {msg['To']}")
         s.send_message(msg)
         s.quit()
+
+    def fail(self, reason, out):
+        self.logger.error(reason)
+        out['error'] = reason
+        out['passed'] = False
+        common.exit(out, False)
