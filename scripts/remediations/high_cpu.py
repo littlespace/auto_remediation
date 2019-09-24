@@ -14,7 +14,7 @@ class HighCpu:
 
     def run(self, inp, args):
         # get cpu stats frm device
-        self.logger.info('Running remediation for: {}, Id: {}'.format(
+        self.logger.info('Running remediation High CPU or: {}, Id: {}'.format(
             inp['name'], inp['id']))
         device = inp['data']['device']
         out = {

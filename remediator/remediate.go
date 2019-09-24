@@ -141,6 +141,13 @@ func (r *Remediator) newTask(inc *executor.Incident, rule Rule) *escalate.Task {
 	return t
 }
 
+func (r *Remediator) addTaskComment(task *escalate.Task, comment string) {
+	task.Params = map[string]string{"comment": comment}
+	if err := r.esc.UpdateTask(task); err != nil {
+		glog.Errorf("Failed to update task %s: %v", task.ID, err)
+	}
+}
+
 func (r *Remediator) updateTask(task *escalate.Task, inc executor.Incident, exeResults models.Commands, new bool) {
 	if r.esc == nil || task.ID == "" {
 		return
@@ -150,11 +157,11 @@ func (r *Remediator) updateTask(task *escalate.Task, inc executor.Incident, exeR
 		content += "This incident has now CLEARED"
 	}
 	content += "\n" + exeResults.String()
-	if new {
-		task.Params = map[string]string{"description": content}
-	} else {
-		task.Params = map[string]string{"comment": content}
+	if !new {
+		r.addTaskComment(task, content)
+		return
 	}
+	task.Params = map[string]string{"description": content}
 	if err := r.esc.UpdateTask(task); err != nil {
 		glog.Errorf("Failed to update task %s: %v", task.ID, err)
 	}
@@ -313,6 +320,8 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 	rem, done := r.checkExisting(incident, rule)
 	if done {
 		r.am.PostAck(incident.Id)
+		comment := fmt.Sprintf("Incident %s re-fired with ID: %d", incident.Name, incident.Id)
+		r.addTaskComment(&escalate.Task{ID: rem.TaskId}, comment)
 		return rem
 	}
 	if rem == nil {
@@ -397,7 +406,14 @@ func (r *Remediator) processCleared(incident executor.Incident, rule Rule) *mode
 		glog.V(2).Infof("Remediation %d for incident %d was not successful, skip onclear run", rem.Id, incident.Id)
 		return rem
 	}
+	isClear := r.am.AssertStatus("CLEARED", incident.Id, r.Config.Config.AlertCheckInterval, rule.ClearCheckDuration)
+	if !isClear {
+		glog.V(2).Infof("Alert %d is ACTIVE again, skip on-clear run", incident.Id)
+		return nil
+	}
+	glog.V(2).Infof("Incident %s is clear for %v, proceeding with onclear", incident.Name, rule.ClearCheckDuration)
 	// run on-clear
+	incident.Data["task_id"] = rem.TaskId
 	cmds := getCmds(incident, rule.OnClear)
 	exeResults, passed = r.execute(rem, "onclear", cmds)
 	if passed {

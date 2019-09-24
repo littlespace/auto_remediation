@@ -15,7 +15,7 @@ class PortErrors:
 
     def run(self, inp, args):
         # get interface stats frm device
-        self.logger.info('Running remediation for: {}, Id: {}'.format(
+        self.logger.info('Running remediation Port Errors for: {}, Id: {}'.format(
             inp['name'], inp['id']))
         device = inp['data']['device']
         out = {

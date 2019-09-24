@@ -39,6 +39,23 @@ def add_issue_comment(opts, issue_key, comment):
         raise CommonException('Failed to add comment: {}'.format(ex))
 
 
+def close_issue(opts, issue_key, reason):
+    url = opts.get('jira_url')
+    if not url:
+        raise CommonException('Invalid URL specified')
+    auth = (opts.get('jira_username'), opts.get('jira_password'))
+    j = JIRA(url, auth=auth)
+    try:
+        j.add_comment(issue_key, reason)
+        issue = j.issue(issue_key)
+        trans = j.transitions(issue)
+        for t in trans:
+            if t['name'] == 'Done':
+                j.transition_issue(issue, t['id'])
+    except JIRAError as ex:
+        raise CommonException(f'Failed to transition: {ex}')
+
+
 def run_junos_command(device, command, opts, port=22):
     username = opts.get('junos_user')
     password = None

@@ -47,6 +47,7 @@ type Rule struct {
 	AlertName       string `yaml:"alert_name"`
 	Enabled         bool
 	UpCheckDuration time.Duration `yaml:"up_check_duration"`
+	ClearCheckDuration time.Duration `yaml:"clear_check_duration"`
 	DontEscalate    bool          `yaml:"dont_escalate"`
 	JiraProject     string        `yaml:"jira_project"`
 	Attempts        int
