@@ -27,15 +27,25 @@ class Fibercut:
             'Description': f"{inp['data'].get('description', '')}",
             'Start Time': f"{inp['start_time']}",
         }
-        if inp['is_aggregate']:
-            components = data.get('components', [])
-            self.logger.info(
-                f'{len(components)} entities affected by this fibercut')
-        else:
-            components = [data]
-        tpl = {'start_time': inp['start_time']}
+        if not inp.get('is_aggregate', False):
+            raise ValueError('Remediation needs an aggregate incident')
+
+        components = data.get('components', [])
+        self.logger.info(
+            f'{len(components)} entities affected by this fibercut')
+        tpl = {'start_time': inp['start_time'], 'circuits': []}
         providers, cids, roles = set(), set(), set()
         for c in components:
+            tpl['circuits'].append(
+                {
+                    'a_side': f"{c['labels']['aSideDeviceName']}:{c['labels']['aSideInterface']}",
+                    'z_side': f"{c['labels']['zSideDeviceName']}:{c['labels']['zSideInterface']}",
+                    'provider': c['labels']['provider'],
+                    'cid': c['labels']['cktId'],
+                    'provider_id': c['labels']['provider_id'],
+                    'role': c['labels']['role'],
+                }
+            )
             providers.add(c['labels']['provider'])
             cids.add(c['labels']['provider_id'])
             roles.add(c['labels']['role'])
@@ -61,15 +71,15 @@ class Fibercut:
         if args.no_email:
             try:
                 comment = 'Not sending provder email - disabled by config'
-                common.add_issue_comment(self.opts, data['task_id'], comment)
+                task_tpl = self.task_tpl(tpl)
+                common.add_issue_comment(self.opts, data['task_id'], task_tpl)
                 out['passed'] = True
                 common.exit(out, True)
             except Exception as ex:
                 self.fail(f'Failed to update task: {ex}', out)
 
         try:
-            t = Template(self.email_template())
-            body = t.render(**tpl)
+            body = self.email_template(tpl)
             self.sendmail(body, self.opts.get('email_server'),
                           self.opts.get('email_user'), self.opts.get(
                               'email_pass'),
@@ -103,8 +113,8 @@ class Fibercut:
         return to
 
     @staticmethod
-    def email_template():
-        return '''
+    def email_template(data):
+        tpl = '''
             Dear {{provider}} Noc,
 
             The following circuits have been detected down by Roblox:
@@ -120,6 +130,18 @@ class Fibercut:
 
             - Roblox NOC
         '''
+        t = Template(tpl)
+        return t.render(**data)
+
+    @staticmethod
+    def task_tpl(data):
+        tpl = '''
+            {% for c in circuits %}
+            A side: {{c.a_side}}, Z side: {{c.z_side}}, RblxID: {{c.cid}}, Provider: {{c.provider}}, ProviderID: {{c.provider_id}}
+            {% endfor %}
+        '''
+        t = Template(tpl)
+        return t.render(**data)
 
     def sendmail(self, body, server, username, password, em_from, em_to):
         host, port = server.split(':')
