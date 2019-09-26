@@ -255,13 +255,13 @@ func (r *Remediator) remediationForIncident(incident executor.Incident) *models.
 	rem := models.NewRemediation(incident)
 	existing, err := r.Db.GetRemediations(models.QueryRemByIncidentId, rem.IncidentId)
 	if err != nil {
-		glog.Errorf("Failed to get remediations: %v", err)
+		glog.Errorf("Failed to get remediations for incident %d: %v", rem.IncidentId, err)
 		return nil
 	}
 	if len(existing) == 0 {
 		existing, err = r.Db.GetRemediations(models.QueryRemByNameEntity, rem.IncidentName, []string(rem.Entities))
 		if err != nil {
-			glog.Errorf("Failed to get remediations: %v", err)
+			glog.Errorf("Failed to get remediations for incident %d (entities: %v): %v", rem.IncidentId, rem.Entities, err)
 			return nil
 		}
 		if len(existing) == 0 {
