@@ -15,7 +15,7 @@ const defaultRuleAttempts = 2
 type Config struct {
 	AdminUser          string        `yaml:"admin_user"`
 	AdminPass          string        `yaml:"admin_pass"`
-	AmqpQName          string        `yaml:"amqp_qname"`
+	AmqpRoutingKey          string        `yaml:"amqp_routing_key"`
 	AmqpAddr           string        `yaml:"amqp_addr"`
 	AmqpUser           string        `yaml:"amqp_user"`
 	AmqpPass           string        `yaml:"amqp_pass"`

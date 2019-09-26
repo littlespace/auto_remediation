@@ -35,7 +35,7 @@ func NewRemediator(configFile string) (*Remediator, error) {
 		glog.Exitf("Failed to read config: %v", err)
 	}
 	config := c.Config
-	q, err := executor.NewQueue(config.AmqpQName, config.AmqpAddr, config.AmqpUser, config.AmqpPass)
+	q, err := executor.NewQueue(config.AmqpRoutingKey, config.AmqpAddr, config.AmqpUser, config.AmqpPass)
 	if err != nil {
 		return nil, err
 	}

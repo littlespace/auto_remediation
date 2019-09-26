@@ -11,7 +11,6 @@ import (
 const (
 	exchangeName = "alerts"
 	exchangeType = "direct"
-	routingKey   = "alerts"
 )
 
 type Incident struct {
@@ -30,18 +29,15 @@ type IncidentQueue interface {
 }
 
 type AmqpQueue struct {
-	Name    string
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	done    chan bool
 	sendTo  chan Incident
 }
 
-func NewQueue(name string, addr, user, pass string) (*AmqpQueue, error) {
+func NewQueue(routingKey string, addr, user, pass string) (*AmqpQueue, error) {
 	uri := fmt.Sprintf("amqp://%s:%s@%s", user, pass, addr)
-	q := &AmqpQueue{
-		Name: name, done: make(chan bool),
-	}
+	q := &AmqpQueue{done: make(chan bool)}
 	var err error
 	if q.conn, err = amqp.Dial(uri); err != nil {
 		return nil, fmt.Errorf("Error dialing amqp server: %v", err)
@@ -61,7 +57,7 @@ func NewQueue(name string, addr, user, pass string) (*AmqpQueue, error) {
 		return nil, fmt.Errorf("Error declaring Exchange: %v", err)
 	}
 	queue, err := q.channel.QueueDeclare(
-		name,  // name
+		"",  // name
 		false, // durable
 		false, // delete when usused
 		true,  // exclusive
@@ -81,7 +77,7 @@ func NewQueue(name string, addr, user, pass string) (*AmqpQueue, error) {
 		return nil, fmt.Errorf("Error binding a queue: %v", err)
 	}
 	msgs, err := q.channel.Consume(
-		q.Name, // queue
+		queue.Name, // queue
 		"",     // consumer
 		false,  // auto-ack
 		false,  // exclusive
@@ -93,7 +89,7 @@ func NewQueue(name string, addr, user, pass string) (*AmqpQueue, error) {
 		return nil, fmt.Errorf("Failed to get msg chan : %v", err)
 	}
 	go q.recv(msgs)
-	glog.Infof("Connected to AMQP server: %v. QName: %s", addr, name)
+	glog.Infof("Connected to AMQP server: %v", addr)
 	return q, nil
 }
 
