@@ -26,6 +26,7 @@ type Remediator struct {
 	recv     chan executor.Incident
 	exe      map[int64]chan struct{}
 	enabled  bool
+	activeIncidents map[int64]bool
 	sync.Mutex
 }
 
@@ -52,6 +53,7 @@ func NewRemediator(configFile string) (*Remediator, error) {
 		recv:     recv,
 		exe:      make(map[int64]chan struct{}),
 		enabled:  true,
+		activeIncidents: make(map[int64]bool),
 	}
 	if config.SlackUrl != "" {
 		r.notif = &notify.SlackNotifier{Url: config.SlackUrl, Channel: config.SlackChannel, Mention: config.SlackMention}
@@ -92,6 +94,24 @@ func (r *Remediator) Enable() error {
 	defer r.Unlock()
 	r.enabled = true
 	return nil
+}
+
+func (r *Remediator) getActiveIncident(id int64) bool {
+	r.Lock()
+	defer r.Unlock()
+	return r.activeIncidents[id]
+}
+
+func (r *Remediator) putActiveIncident(id int64)  {
+	r.Lock()
+	defer r.Unlock()
+	r.activeIncidents[id] = true
+}
+
+func (r *Remediator) delActiveIncident(id int64) {
+	r.Lock()
+	defer r.Unlock()
+	delete(r.activeIncidents, id)
 }
 
 func (r *Remediator) Start(ctx context.Context) {
@@ -241,6 +261,10 @@ func (r *Remediator) processIncident(incident executor.Incident) *models.Remedia
 		}
 		incident.Data["components"] = components
 	}
+	if r.getActiveIncident(incident.Id) {
+		glog.V(2).Infof("Incident %d already in the queue, skipping", incident.Id)
+		return nil
+	}
 	var rem *models.Remediation
 	switch incident.Type {
 	case "ACTIVE":
@@ -327,6 +351,9 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 	if rem == nil {
 		rem = models.NewRemediation(incident)
 	}
+	// mark an incident as active to avoid duplication
+	r.putActiveIncident(incident.Id)
+	defer r.delActiveIncident(incident.Id)
 	// make sure the incident stays active for the UpCheckDuration
 	config := r.Config.Config
 	isActive := r.am.AssertStatus("ACTIVE", incident.Id, config.AlertCheckInterval, rule.UpCheckDuration)

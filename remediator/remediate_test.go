@@ -148,14 +148,15 @@ func TestIncidentProcessing(t *testing.T) {
 	}
 	db := &MockDb{}
 	r := &Remediator{
-		Config:   c,
-		Db:       db,
-		queue:    &MockQueue{},
-		executor: &MockExecutor{},
-		esc:      &MockEscalator{},
-		notif:    &MockNotifier{},
-		am:       &am.AlertManager{Client: &MockClient{}},
-		exe:      make(map[int64]chan struct{}),
+		Config:          c,
+		Db:              db,
+		queue:           &MockQueue{},
+		executor:        &MockExecutor{},
+		esc:             &MockEscalator{},
+		notif:           &MockNotifier{},
+		am:              &am.AlertManager{Client: &MockClient{}},
+		exe:             make(map[int64]chan struct{}),
+		activeIncidents: make(map[int64]bool),
 	}
 	inc := executor.Incident{
 		Name: "TestIncident 1",
@@ -184,6 +185,11 @@ func TestIncidentProcessing(t *testing.T) {
 	db.getRemediations = func() ([]*models.Remediation, error) { return []*models.Remediation{}, nil }
 	inc.Name = "Test1"
 	inc.Id = 10
+	assert.Nil(t, r.processIncident(inc))
+
+	// test already active remediation
+	r.putActiveIncident(99)
+	inc.Id = 99
 	assert.Nil(t, r.processIncident(inc))
 
 	// test existing remediation
@@ -257,15 +263,16 @@ func TestIncidentEscalate(t *testing.T) {
 	}
 	mockEsc := &MockEscalator{}
 	r := &Remediator{
-		Config:   c,
-		Db:       &MockDb{},
-		queue:    &MockQueue{},
-		executor: &MockExecutor{},
-		notif:    &MockNotifier{},
-		esc:      mockEsc,
-		am:       &am.AlertManager{Client: &MockClient{}},
-		exe:      make(map[int64]chan struct{}),
-		enabled:  true,
+		Config:          c,
+		Db:              &MockDb{},
+		queue:           &MockQueue{},
+		executor:        &MockExecutor{},
+		notif:           &MockNotifier{},
+		esc:             mockEsc,
+		am:              &am.AlertManager{Client: &MockClient{}},
+		exe:             make(map[int64]chan struct{}),
+		enabled:         true,
+		activeIncidents: make(map[int64]bool),
 	}
 	inc := executor.Incident{
 		Name: "Test4",
