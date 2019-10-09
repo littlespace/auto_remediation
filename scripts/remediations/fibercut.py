@@ -36,6 +36,8 @@ class Fibercut:
         tpl = {'start_time': inp['start_time'], 'circuits': []}
         providers, cids, roles = set(), set(), set()
         for c in components:
+            if c['status'].lower() != "active":
+                continue
             tpl['circuits'].append(
                 {
                     'a_side': f"{c['labels']['aSideDeviceName']}:{c['labels']['aSideInterface']}",
@@ -136,6 +138,7 @@ class Fibercut:
     @staticmethod
     def task_tpl(data):
         tpl = '''
+            Currently Down circuits:
             {% for c in circuits %}
             A side: {{c.a_side}}, Z side: {{c.z_side}}, RblxID: {{c.cid}}, Provider: {{c.provider}}, ProviderID: {{c.provider_id}}
             {% endfor %}
