@@ -50,7 +50,7 @@ def close_issue(opts, issue_key, reason):
         issue = j.issue(issue_key)
         trans = j.transitions(issue)
         for t in trans:
-            if t['name'] == 'Done':
+            if t['name'] in ['Done', 'Close']:
                 j.transition_issue(issue, t['id'])
     except JIRAError as ex:
         raise CommonException(f'Failed to transition: {ex}')

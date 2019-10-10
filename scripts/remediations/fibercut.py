@@ -51,6 +51,13 @@ class Fibercut:
             providers.add(c['labels']['provider'])
             cids.add(c['labels']['provider_id'])
             roles.add(c['labels']['role'])
+        if len(tpl['circuits']) == 0:
+            self.logger.error(
+                'All componenet alerts are cleared, not performing remediation')
+            common.add_issue_comment(
+                self.opts, data['task_id'], 'All componenet alerts are cleared')
+            out['passed'] = True
+            common.exit(out, True)
         if len(providers) > 1 or len(roles) > 1:
             out['error'] = 'Found more than 1 provider or ckt Role in incident'
             out['passed'] = False
