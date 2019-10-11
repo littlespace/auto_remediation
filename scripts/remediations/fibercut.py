@@ -40,17 +40,19 @@ class Fibercut:
                 continue
             tpl['circuits'].append(
                 {
-                    'a_side': f"{c['labels']['aSideDeviceName']}:{c['labels']['aSideInterface']}",
-                    'z_side': f"{c['labels']['zSideDeviceName']}:{c['labels']['zSideInterface']}",
-                    'provider': c['labels']['provider'],
-                    'cid': c['labels']['cktId'],
-                    'provider_id': c['labels']['provider_id'],
-                    'role': c['labels']['role'],
+                    'a_side': f"{c['labels'].get('aSideDeviceName', 'Unknown')}:{c['labels'].get('aSideInterface', 'Unknown')}",
+                    'z_side': f"{c['labels'].get('zSideDeviceName', 'Unknown')}:{c['labels'].get('zSideInterface', 'Unknown')}",
+                    'provider': c['labels'].get('provider', 'Unknown'),
+                    'cid': c['labels'].get('cktId', 'Unknown'),
+                    'provider_id': c['labels'].get('provider_id', 'Unknown'),
+                    'role': c['labels'].get('role', 'Unknown'),
                 }
             )
-            providers.add(c['labels']['provider'])
-            cids.add(c['labels']['provider_id'])
-            roles.add(c['labels']['role'])
+            if c['labels'].get('provider'):
+                providers.add(c['labels']['provider'])
+            cids.add(c['labels'].get('provider_id', 'Unknown'))
+            if c['labels'].get('role'):
+                roles.add(c['labels']['role'])
         if len(tpl['circuits']) == 0:
             self.logger.error(
                 'All componenet alerts are cleared, not performing remediation')
@@ -62,7 +64,7 @@ class Fibercut:
             out['error'] = 'Found more than 1 provider or ckt Role in incident'
             out['passed'] = False
             common.exit(out, False)
-        tpl['provider'] = list(providers)[0]
+        tpl['provider'] = list(providers)[0] if len(providers) > 0 else 'Unknown'
         tpl['cids'] = list(cids)
         tpl['task_id'] = data.get('task_id', 'UNKNOWN')
         nb_url = self.opts.get('netbox_url') + \
