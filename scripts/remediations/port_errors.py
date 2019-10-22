@@ -42,11 +42,18 @@ class PortErrors:
         # implement auto drain for dc links only for now
         result = True
         if inp['data']['labels'].get('role', '') == 'dc' and args.auto_drain.lower() == 'true':
+            if device in ['ps01-c1-chi1', 'ps02-c1-chi1']:
+                peerDevice = inp['data']['labels'].get('peerDevice')
+                if not peerDevice or not peerDevice.startswith('rs'):
+                    # exception for pod0 - dont drain any uplinks
+                    self.logger.info('Not draining any uplinks on pod0 PS')
+                    out['auto-drain'] = False
+                    common.exit(out, result)
             self.logger.info(
                 f"Attempting auto-drain of {device}:{inp['data']['entity']}")
-            dry_run = 'false'
-            if hasattr(args, 'dry_run'):
-                dry_run = args.dry_run.lower()
+            dry_run = 'true'
+            if hasattr(args, 'no_dry_run'):
+                dry_run = 'false'
             out, result = self.auto_drain_dc(
                 out, device, inp['data']['entity'], dry_run)
             if result:
@@ -63,6 +70,8 @@ class PortErrors:
             out['auto-drain'] = False
             return out, result
         e = {'interface': interface, 'dry_run': dry_run, 'undrain': 'false'}
+        if dry_run == 'true':
+            self.logger.info('Performing dry-run drain/undrain')
         try:
             job_id, result = common.run_awx_job(
                 url, token, self.awx_dc_drain_job_template, e, limit=device, timeout=120)
@@ -70,7 +79,7 @@ class PortErrors:
             out['awx_job_id'] = job_id
             if result:
                 out['message'] = (
-                    'This interface has been auto-drained. Use AWX job template {} to undrain'.format(
+                    'This interface has been auto-drained. Use https://awx.simulprod.com/#/templates/job_template/{} to undrain'.format(
                         self.awx_dc_drain_job_template)
                 )
         except Exception as ex:

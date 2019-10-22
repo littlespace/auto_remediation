@@ -1,3 +1,4 @@
+import napalm
 import sys
 import requests
 import time
@@ -137,3 +138,15 @@ def nb_device_ip(nb_url, device):
     if len(results['results']) == 0:
         raise CommonException(f'Failed to get nb result for {device}')
     return results['results'][0]['primary_ip']['address'].split('/')[0]
+
+
+def napalm_get(device_ip, getter, opts):
+    driver = napalm.get_network_driver('junos')
+    device = driver(device_ip, opts['junos_user'], opts['junos_pwd'])
+    device.open()
+    method = getattr(device, getter)
+    if not method:
+        raise CommonException('Invalid napalm method')
+    resp = method()
+    device.close()
+    return resp
