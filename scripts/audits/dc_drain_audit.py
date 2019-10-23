@@ -63,7 +63,7 @@ class DcDrainAudit:
         # dont drain if part of a lag
         if iface['lag'] is not None:
             out['message'] = 'Link is part of a lag'
-            common.exit(out, True)
+            common.exit(out, False)
 
     def _check_threshold(self, device_ip, interface, nb_data, threshold=0.5):
         # no more than threshold% uplinks drained at any time based on drained tags and down links
