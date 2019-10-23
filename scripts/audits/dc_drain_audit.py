@@ -37,13 +37,13 @@ class DcDrainAudit:
             nb_data = requests.get(nb_url)
             d = nb_data.json()
             iface = d['interfaces'][interface]
-            self._pre_checks(iface, out)
             if d['role'] not in self.supported_roles:
                 out['message'] = f"Unsupported switch role: {d['role']}"
                 common.exit(out, True)
             if iface['peer_role'] not in self.supported_roles[d['role']]:
                 out['message'] = f"Unsupported peer-switch role: {iface['peer_role']}"
                 common.exit(out, True)
+            self._pre_checks(iface, out)
             ip = d['primary_ip'].split('/')[0]
             passed, msg = self._audit(
                 ip, interface, d, threshold=self.args.threshold)
@@ -63,7 +63,7 @@ class DcDrainAudit:
         # dont drain if part of a lag
         if iface['lag'] is not None:
             out['message'] = 'Link is part of a lag'
-            common.exit(out, False)
+            common.exit(out, True)
 
     def _check_threshold(self, device_ip, interface, nb_data, threshold=0.5):
         # no more than threshold% uplinks drained at any time based on drained tags and down links
