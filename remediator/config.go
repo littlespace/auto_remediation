@@ -15,7 +15,7 @@ const defaultRuleAttempts = 2
 type Config struct {
 	AdminUser          string        `yaml:"admin_user"`
 	AdminPass          string        `yaml:"admin_pass"`
-	AmqpRoutingKey          string        `yaml:"amqp_routing_key"`
+	AmqpRoutingKey     string        `yaml:"amqp_routing_key"`
 	AmqpAddr           string        `yaml:"amqp_addr"`
 	AmqpUser           string        `yaml:"amqp_user"`
 	AmqpPass           string        `yaml:"amqp_pass"`
@@ -26,7 +26,9 @@ type Config struct {
 	AmPassword         string        `yaml:"am_password"`
 	AmOwner            string        `yaml:"am_owner"`
 	AmTeam             string        `yaml:"am_team"`
+	ScriptsURL         string        `yaml:"scripts_url"`
 	ScriptsPath        string        `yaml:"scripts_path"`
+	FetchInterval      time.Duration `yaml:"scripts_fetch_interval"`
 	CommonOpts         string        `yaml:"common_opts_file"`
 	IncidentTimeout    time.Duration `yaml:"incident_timeout"`
 	DbAddr             string        `yaml:"db_addr"`
@@ -44,16 +46,16 @@ type Config struct {
 }
 
 type Rule struct {
-	AlertName       string `yaml:"alert_name"`
-	Enabled         bool
-	UpCheckDuration time.Duration `yaml:"up_check_duration"`
+	AlertName          string `yaml:"alert_name"`
+	Enabled            bool
+	UpCheckDuration    time.Duration `yaml:"up_check_duration"`
 	ClearCheckDuration time.Duration `yaml:"clear_check_duration"`
-	DontEscalate    bool          `yaml:"dont_escalate"`
-	JiraProject     string        `yaml:"jira_project"`
-	Attempts        int
-	Audits          []executor.Command
-	Remediations    []executor.Command
-	OnClear         []executor.Command `yaml:"on_clear"`
+	DontEscalate       bool          `yaml:"dont_escalate"`
+	JiraProject        string        `yaml:"jira_project"`
+	Attempts           int
+	Audits             []executor.Command
+	Remediations       []executor.Command
+	OnClear            []executor.Command `yaml:"on_clear"`
 }
 
 type ConfigHandler struct {

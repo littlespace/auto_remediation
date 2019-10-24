@@ -16,16 +16,16 @@ import (
 )
 
 type Remediator struct {
-	Config   *ConfigHandler
-	Db       models.Dbase
-	queue    executor.IncidentQueue
-	executor executor.Executioner
-	am       *am.AlertManager
-	notif    notify.Notifier
-	esc      escalate.TaskEscalator
-	recv     chan executor.Incident
-	exe      map[int64]chan struct{}
-	enabled  bool
+	Config          *ConfigHandler
+	Db              models.Dbase
+	queue           executor.IncidentQueue
+	executor        executor.Executioner
+	am              *am.AlertManager
+	notif           notify.Notifier
+	esc             escalate.TaskEscalator
+	recv            chan executor.Incident
+	exe             map[int64]chan struct{}
+	enabled         bool
 	activeIncidents map[int64]bool
 	sync.Mutex
 }
@@ -45,14 +45,14 @@ func NewRemediator(configFile string) (*Remediator, error) {
 	db := models.NewDB(config.DbAddr, config.DbUsername, config.DbPassword, config.DbName, config.DbTimeout)
 	amgr := am.NewAlertManager(config.AlertManagerAddr, config.AmUsername, config.AmPassword, config.AmOwner, config.AmTeam, config.AmToken)
 	r := &Remediator{
-		Config:   c,
-		Db:       db,
-		queue:    q,
-		executor: executor.NewExecutor(config.ScriptsPath, config.CommonOpts),
-		am:       amgr,
-		recv:     recv,
-		exe:      make(map[int64]chan struct{}),
-		enabled:  true,
+		Config:          c,
+		Db:              db,
+		queue:           q,
+		executor:        executor.NewExecutor(config.ScriptsPath, config.ScriptsURL, config.CommonOpts, config.FetchInterval),
+		am:              amgr,
+		recv:            recv,
+		exe:             make(map[int64]chan struct{}),
+		enabled:         true,
 		activeIncidents: make(map[int64]bool),
 	}
 	if config.SlackUrl != "" {
@@ -102,7 +102,7 @@ func (r *Remediator) getActiveIncident(id int64) bool {
 	return r.activeIncidents[id]
 }
 
-func (r *Remediator) putActiveIncident(id int64)  {
+func (r *Remediator) putActiveIncident(id int64) {
 	r.Lock()
 	defer r.Unlock()
 	r.activeIncidents[id] = true
