@@ -11,6 +11,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/golang/glog"
+	getter "github.com/hashicorp/go-getter"
 )
 
 const defaultTimeout = 30 * time.Second
@@ -43,8 +46,22 @@ type Executor struct {
 	commonOpts  string
 }
 
-func NewExecutor(scriptsPath, commonOpts string) Executioner {
-	return &Executor{scriptsPath: scriptsPath, commonOpts: commonOpts}
+func NewExecutor(scriptsPath, scriptsURL, commonOpts string, fetchInterval time.Duration) Executioner {
+	e := &Executor{scriptsPath: scriptsPath, commonOpts: commonOpts}
+	glog.Infof("Fetching scripts from %s", scriptsURL)
+	if err := getter.GetAny(e.scriptsPath, scriptsURL); err != nil {
+		glog.Exitf("FATAL error: Failed to fetch any scripts: %v", err)
+	}
+	go func() {
+		for {
+			time.Sleep(fetchInterval)
+			glog.V(2).Infof("Fetching scripts from %s", scriptsURL)
+			if err := getter.GetAny(e.scriptsPath, scriptsURL); err != nil {
+				glog.Errorf("Failed to fetch scripts: %v", err)
+			}
+		}
+	}()
+	return e
 }
 
 func (e *Executor) Execute(ctx context.Context, cmds []Command, maxParallel int) map[*Command]*CmdResult {
