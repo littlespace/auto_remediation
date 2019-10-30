@@ -404,8 +404,8 @@ func (r *Remediator) processActive(incident executor.Incident, rule Rule) *model
 	} else {
 		rem.End(models.Status_REMEDIATION_SUCCESS, r.Db)
 		r.notify(rem, "Remediation Successful")
+		r.am.PostAck(incident.Id)
 	}
-	r.am.PostAck(incident.Id)
 	r.updateTask(task, incident, append(auditExeResults, remExeResults...), rem.TaskId == "")
 	return rem
 }
