@@ -2,3 +2,4 @@ requests
 jira
 junos-eznc
 pyaml
+napalm
