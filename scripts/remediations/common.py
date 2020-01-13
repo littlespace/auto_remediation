@@ -150,3 +150,32 @@ def napalm_get(device_ip, getter, opts):
     resp = method()
     device.close()
     return resp
+
+
+def clear_alertmanager_alert(am_url, am_token, alert_id, notify=True):
+    url = am_url + f'/api/alerts/{alert_id}/clear'
+    if not notify:
+        url += '?notify=false'
+    headers = {
+        'Authorization': f'Bearer {am_token}',
+    }
+    resp = requests.patch(url, headers=headers)
+    resp.raise_for_status()
+    alert = resp.json()
+    if alert['status'] != 'CLEARED':
+        raise CommonException(f'Failed to clear alert {alert_id}')
+
+
+def escalate_alertmanager_alert(am_url, am_token, alert_id, sev, notify=True):
+    url = am_url + f'/api/alerts/{alert_id}/escalate?severity={sev}'
+    if not notify:
+        url += '&notify=false'
+    headers = {
+        'Authorization': f'Bearer {am_token}',
+    }
+    resp = requests.patch(url, headers=headers)
+    resp.raise_for_status()
+    alert = resp.json()
+    if alert['severity'] != sev:
+        msg = f'Failed to escalate alert {alert_id}'
+        raise CommonException(msg)
