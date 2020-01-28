@@ -7,7 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from jinja2 import Template
 
-from scripts.remediations import common
+from scripts.common import common
 
 
 class Fibercut:
@@ -64,7 +64,8 @@ class Fibercut:
             out['error'] = 'Found more than 1 provider or ckt Role in incident'
             out['passed'] = False
             common.exit(out, False)
-        tpl['provider'] = list(providers)[0] if len(providers) > 0 else 'Unknown'
+        tpl['provider'] = list(providers)[0] if len(
+            providers) > 0 else 'Unknown'
         tpl['cids'] = list(cids)
         tpl['task_id'] = data.get('task_id', 'UNKNOWN')
         nb_url = self.opts.get('netbox_url') + \

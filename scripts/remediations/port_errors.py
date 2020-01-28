@@ -1,7 +1,7 @@
 import json
 import sys
 
-from scripts.remediations import common
+from scripts.common import common
 
 
 class PortErrors:

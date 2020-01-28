@@ -3,8 +3,6 @@ import sys
 import time
 import re
 
-from scripts.remediations import common
-
 
 class ChassisAlarms:
     ''' This remediation checks chassis alarm alerts for legitimacy before paging victorops.

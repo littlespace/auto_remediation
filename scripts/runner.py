@@ -6,6 +6,7 @@ import json
 import yaml
 import argparse
 import importlib
+import munch
 import os
 import warnings
 warnings.filterwarnings('ignore')
@@ -32,6 +33,8 @@ def parse_args():
                         help='Script name to run')
     parser.add_argument('--common_opts_file', dest='common_opts_file', default=None,
                         help='Path to common options yaml file for all scripts')
+    parser.add_argument('--test', action='store_true',
+                        help='Run locally in test mode')
     return parser.parse_known_args()
 
 
@@ -40,7 +43,6 @@ def main(args):
     level = logging.INFO
     if main_args.debug:
         level = logging.DEBUG
-    inp = json.load(sys.stdin)
     logger = setup_logging(main_args.script_name, loglvl=level)
     common_opts = {}
     if main_args.common_opts_file:
@@ -54,16 +56,22 @@ def main(args):
         scriptClass = pkg.getScript(main_args.script_name)
     except Exception as ex:
         logger.error(ex)
-        print(json.dumps({'passed': False, 'message': 'Failed to import scripts pkg'}))
+        print(json.dumps(
+            {'passed': False, 'message': 'Failed to import scripts pkg'}))
         sys.exit(1)
     if not scriptClass:
         print(json.dumps({'passed': False, 'message': 'Script not found'}))
         sys.exit(1)
     script = scriptClass(logger, common_opts)
+    if main_args.test:
+        data = script.test()
+        args = munch.munchify(data['args'])
+        script.run(data['input'], args)
     parser = argparse.ArgumentParser()
     for c in custom:
         if c.startswith('--'):
             parser.add_argument(c)
+    inp = json.load(sys.stdin)
     script.run(inp, parser.parse_args(custom))
 
 

@@ -1,6 +1,6 @@
 import requests
 
-from scripts.remediations import common
+from scripts.common import common
 
 
 class DcDrainAudit:
