@@ -201,7 +201,10 @@ func (a *AlertManager) refreshToken(expiresAt int64) {
 func (a *AlertManager) PostAck(id int64) error {
 	a.Lock()
 	defer a.Unlock()
-	url := a.addr + fmt.Sprintf("%s/%d/ack?owner=%s&team=%s", AlertPath, id, a.owner, a.team)
+	url := a.addr + fmt.Sprintf("%s/%d/ack?owner=%s", AlertPath, id, a.owner)
+	if a.team != "" {
+		url += fmt.Sprintf("&team=%s", a.team)
+	}
 	req, _ := http.NewRequest("PATCH", url, nil)
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.token))
 	_, err := a.Client.Do(req)
