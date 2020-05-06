@@ -11,6 +11,20 @@ class CommonException(Exception):
     pass
 
 
+def get_jira_issue(opts, issue_key):
+    url = opts.get('jira_url')
+    if not url:
+        raise CommonException('Invalid URL specified')
+    try:
+        auth = (opts.get('jira_username'), opts.get('jira_password'))
+        j = JIRA(url, auth=auth)
+        issue = j.issue(issue_key)
+        return j, issue
+    except JIRAError as ex:
+        raise CommonException(
+            'Failed to get Jira issue {}: {}'.format(issue_key, ex))
+
+
 def create_jira_issue(url, auth, project, issue_type, summary, description):
     j = JIRA(url, auth=auth)
     try:
@@ -55,6 +69,30 @@ def close_issue(opts, issue_key, reason):
                 j.transition_issue(issue, t['id'])
     except JIRAError as ex:
         raise CommonException(f'Failed to transition: {ex}')
+
+
+def update_issue(opts, issue_key, comment=None, fields=None, labels=None, components=None):
+    j, issue = get_jira_issue(opts, issue_key)
+    fields_to_update = {}
+    update = {}
+    if fields:
+        allfields = j.fields()
+        name_map = {field['name']: field['id'] for field in allfields}
+        fields_to_update = {name_map.get(
+            fk, fk): fv for fk, fv in fields.items()}
+    if labels:
+        fields_to_update['labels'] = labels
+    if components:
+        update['components'] = [
+            {'set': [{'name': name} for name in components]}]
+    try:
+        if comment:
+            j.add_comment(issue_key, comment)
+        if fields or update:
+            issue.update(fields=fields_to_update, update=update)
+    except JIRAError as ex:
+        raise CommonException(
+            'Failed to update issue {}: {}'.format(issue_key, ex))
 
 
 def run_junos_command(device, command, opts, port=22):

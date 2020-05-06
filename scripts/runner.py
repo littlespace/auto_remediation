@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--common_opts_file', dest='common_opts_file', default=None,
                         help='Path to common options yaml file for all scripts')
     parser.add_argument('--test', action='store_true',
-                        help='Run locally in test mode')
+                        help='Run locally in test mode. This calls the script using the input and args specified in the test() method of the script.')
     return parser.parse_known_args()
 
 

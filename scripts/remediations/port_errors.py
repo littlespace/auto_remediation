@@ -35,7 +35,12 @@ class PortErrors:
         try:
             task_id = inp['data'].get('task_id')
             if task_id:
-                common.add_issue_comment(self.opts, task_id, output)
+                common.update_issue(
+                    self.opts, task_id,
+                    comment=output,
+                    fields={'Site': [inp['data']['site'].upper()]},
+                    components=['Repair']
+                )
         except common.CommonException as ex:
             self.logger.error('Failed to add task comment: {}'.format(ex))
 
