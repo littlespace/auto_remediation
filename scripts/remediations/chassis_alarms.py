@@ -2,8 +2,7 @@ import json
 import sys
 import time
 import re
-
-from scripts.remediations import common
+from scripts.common import common
 
 
 class ChassisAlarms:

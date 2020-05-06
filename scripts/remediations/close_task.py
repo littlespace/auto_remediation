@@ -2,7 +2,7 @@ import json
 import sys
 import time
 
-from scripts.remediations import common
+from scripts.common import common
 
 
 class CloseTask:

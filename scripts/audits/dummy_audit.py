@@ -4,6 +4,8 @@ import json
 import random
 import sys
 
+from scripts.common import common
+
 
 class DummyAudit:
 
@@ -40,7 +42,17 @@ class DummyAudit:
             'passed': passed,
             'message': message
         }
-        print(json.dumps(out))
-        if not passed:
-            sys.exit(1)
-        sys.exit(0)
+        common.exit(out, passed)
+
+    def test(self):
+        return {
+            'input': {
+                'name': 'test incident',
+                'is_aggregate': False,
+                'id': 100,
+                'data': {'device': 'dev1', 'entity': 'e1'},
+            },
+            'args': {
+                'pass_percent': 50,
+            }
+        }

@@ -3,6 +3,8 @@ import time
 import json
 import sys
 
+from scripts.common import common
+
 
 class DummyRemediation:
 
@@ -36,5 +38,15 @@ class DummyRemediation:
             'elapsed_time': int(time.time() - t),
             'message': 'Remediation successful',
         }
-        print(json.dumps(out))
-        sys.exit(0)
+        common.exit(out, True)
+
+    def test(self):
+        return {
+            'input': {
+                'name': 'test incident',
+                'is_aggregate': False,
+                'id': 100,
+                'data': {'device': 'dev1', 'task_id': 'T1', 'entity': 'e1'},
+            },
+            'args': {},
+        }
