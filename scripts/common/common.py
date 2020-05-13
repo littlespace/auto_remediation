@@ -217,3 +217,40 @@ def escalate_alertmanager_alert(am_url, am_token, alert_id, sev, notify=True):
     if alert['severity'] != sev:
         msg = f'Failed to escalate alert {alert_id}'
         raise CommonException(msg)
+
+
+def run_nornir_task(url, task_params, poll_interval=10, max_wait=600):
+    ''' Call a nornir task and wait until result '''
+    task_params.update(
+        {
+            'vars_file': 'shared/variables.yaml',
+            'default_vars_file': 'shared/defaults.yaml',
+            'project': 'Project-X',
+            'use_vault_creds': True,
+        }
+    )
+    resp = requests.post(f'{url}/tasks/', json=task_params, timeout=5.0)
+    resp.raise_for_status()
+    data = resp.json()
+    start = int(time.time())
+    while int(time.time()) - start <= max_wait:
+        time.sleep(poll_interval)
+        resp = requests.get(f"{url}/tasks/?job_id={data['id']}", timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+        if data['status'] in ['failed', 'passed']:
+            break
+    if data['status'] not in ['failed', 'passed']:
+        raise CommonException(
+            f"Timed out waiting for job {data['id']} to finish")
+    if not data['result']['output']['output']:
+        return {'job_id': data['id'], 'passed': False, 'message': 'Failed to run task'}
+    messages = []
+    passed = True
+    for device, taskresults in data['result']['output']['output'].items():
+        for taskresult in taskresults:
+            if not taskresult['passed']:
+                messages.append(
+                    f"Task {taskresult['task']} on host {device} failed with output {taskresult['output']}")
+                passed = False
+    return {'job_id': data['id'], 'passed': passed, 'message': '\n'.join(messages)}
